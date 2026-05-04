@@ -12,3 +12,4 @@ wheels/
 # Editor / AI tool configs
 .claude/
 .cursor/
+config.toml

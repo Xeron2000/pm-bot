@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from pm_bot.models.market import Recommendation, TemperatureBucket, WeatherEvent
+from pm_bot.models.market import Recommendation, TemperatureBucket, WeatherEvent, ForecastResult
 from pm_bot.models.config import STRATEGY_DEFAULTS
-from pm_bot.models.market import ForecastResult
 
 
 class Strategy:
@@ -144,8 +143,27 @@ class LadderStrategy(Strategy):
         return recs
 
 
-ALL_STRATEGIES: dict[str, Strategy] = {
-    "gopfan2": Gopfan2Strategy(),
-    "sum_arb": SumArbStrategy(),
-    "ladder": LadderStrategy(),
-}
+_all_strategies: dict[str, Strategy] | None = None
+
+
+def get_all_strategies() -> dict[str, Strategy]:
+    """Lazy construction to avoid circular imports with narrow_no/airport_arb."""
+    global _all_strategies
+    if _all_strategies is None:
+        from pm_bot.strategies.narrow_no import NarrowNoStrategy
+        from pm_bot.strategies.airport_arb import AirportArbStrategy
+
+        _all_strategies = {
+            "gopfan2": Gopfan2Strategy(),
+            "sum_arb": SumArbStrategy(),
+            "ladder": LadderStrategy(),
+            "narrow_no": NarrowNoStrategy(),
+            "airport_arb": AirportArbStrategy(),
+        }
+    return _all_strategies
+
+
+# Eager load for backward compatibility — safe because by the time
+# external code imports this module, narrow_no/airport_arb are already
+# importable (they only need Strategy, which is defined above).
+ALL_STRATEGIES: dict[str, Strategy] = get_all_strategies()

@@ -8,9 +8,12 @@ from rich.console import Console
 
 from pm_bot.core.polymarket import fetch_weather_events
 from pm_bot.core.weather import fetch_forecast
+from pm_bot.core.ws import MarketWsClient
 from pm_bot.strategies.base import ALL_STRATEGIES, Strategy
 from pm_bot.models.config import DEFAULT_CITIES, STRATEGY_DEFAULTS, resolve_city_alias
+from pm_bot.core.config_loader import get_station_for_city, load_config
 from pm_bot.cli.display import render_recommendations
+from pm_bot.models.market import Recommendation, ForecastResult
 
 console = Console()
 
@@ -22,14 +25,16 @@ async def run_watch(
     all_cities: bool = False,
     edge_override: float | None = None,
     include_closed: bool = False,
+    use_ws: bool = True,
     debug: bool = False,
 ) -> None:
     _setup_logging(debug)
 
+    config = load_config()
     cities = _resolve_cities(cities_str)
     strategies = _resolve_strategies(strategy)
 
-    console.print(f"[bold]PM-Bot Watch[/] — refreshing every {interval}s. Ctrl+C to stop.")
+    console.print("[bold]PM-Bot Watch[/] — Ctrl+C to stop.")
 
     try:
         while True:
@@ -38,13 +43,33 @@ async def run_watch(
                 if not all_cities:
                     events = [e for e in events if e.city in cities]
 
-                forecasts = {}
+                forecasts: dict[str, ForecastResult] = {}
+                airport_forecasts: dict[str, ForecastResult] = {}
+                city_forecasts: dict[str, ForecastResult] = {}
                 for ev in events:
                     fc = await fetch_forecast(client, ev.city, ev.date)
                     if fc:
                         forecasts[ev.city] = fc
 
-                all_recs = []
+                    station_info = get_station_for_city(config, ev.city)
+                    if station_info:
+                        lat = station_info.get("lat")
+                        lon = station_info.get("lon")
+                        if lat is not None and lon is not None:
+                            from pm_bot.cli.trade import fetch_forecast_at
+                            afc = await fetch_forecast_at(client, float(lat), float(lon), ev.city, ev.date)
+                            if afc:
+                                airport_forecasts[ev.city] = afc
+
+                        from pm_bot.models.config import CITY_COORDS
+                        city_coords = CITY_COORDS.get(ev.city)
+                        if city_coords:
+                            from pm_bot.cli.trade import fetch_forecast_at
+                            cfc = await fetch_forecast_at(client, city_coords[0], city_coords[1], ev.city, ev.date)
+                            if cfc:
+                                city_forecasts[ev.city] = cfc
+
+                all_recs: list[Recommendation] = []
                 for ev in events:
                     for strat_name, strat in strategies:
                         kwargs: dict = {}
@@ -52,6 +77,10 @@ async def run_watch(
                             kwargs[k] = edge_override if k in ("edge_min",) and edge_override else v
                         if strat_name == "ladder" and ev.city in forecasts:
                             kwargs["forecast"] = forecasts[ev.city]
+                        if strat_name == "airport_arb":
+                            kwargs["config"] = config
+                            kwargs["airport_forecast"] = airport_forecasts.get(ev.city)
+                            kwargs["city_forecast"] = city_forecasts.get(ev.city)
                         recs = strat.run(ev, **kwargs)
                         if edge_override is not None:
                             recs = [r for r in recs if r.edge >= edge_override]
@@ -59,11 +88,57 @@ async def run_watch(
 
             console.clear()
             render_recommendations(all_recs)
-            console.print(f"\n[dim]Next refresh in {interval}s...[/dim]")
-            await asyncio.sleep(interval)
+
+            token_ids = [b.market_id for r in all_recs for b in [r.bucket] if b.market_id]
+
+            if use_ws and token_ids:
+                console.print(f"\n[dim]Streaming via WebSocket ({len(token_ids)} markets)...[/dim]")
+                await _ws_watch(token_ids, strategies, edge_override, config)
+                break
+            else:
+                console.print(f"\n[dim]Polling mode — next refresh in {interval}s...[/dim]")
+                await asyncio.sleep(interval)
 
     except KeyboardInterrupt:
         console.print("\n[yellow]Watch stopped.[/yellow]")
+
+
+async def _ws_watch(
+    token_ids: list[str],
+    strategies: list[tuple[str, Strategy]],
+    edge_override: float | None,
+    config: dict,
+) -> None:
+    ws_client = MarketWsClient()
+    ws_task = asyncio.create_task(ws_client.connect())
+    await asyncio.sleep(1)
+
+    await ws_client.subscribe(token_ids)
+
+    price_map: dict[str, dict[str, float | None]] = {}
+    try:
+        while True:
+            try:
+                update = await asyncio.wait_for(ws_client.updates(), timeout=15)
+            except asyncio.TimeoutError:
+                continue
+
+            if update.token_id:
+                price_map[update.token_id] = {
+                    "best_bid": update.best_bid,
+                    "best_ask": update.best_ask,
+                }
+
+            if update.event_type in ("best_bid_ask", "last_trade_price"):
+                console.print(
+                    f"  [dim]{update.event_type}[/dim] "
+                    f"{update.token_id[:12]} "
+                    f"bid={update.best_bid or '-'} ask={update.best_ask or '-'}",
+                    end="\r",
+                )
+    except KeyboardInterrupt:
+        ws_client.stop()
+        ws_task.cancel()
 
 
 def _resolve_cities(cities_str: str | None) -> set[str]:
