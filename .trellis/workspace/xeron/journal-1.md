@@ -142,3 +142,36 @@ Two features: (1) Strategy research → added TruncationEdge + EnsembleSpread, f
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Weather market pitfalls research + Paris ICAO fix
+
+**Date**: 2026-05-05
+**Task**: Weather market pitfalls research + Paris ICAO fix
+**Branch**: `main`
+
+### Summary
+
+Web research identified 12 pitfall categories in Polymarket weather markets. Critical: sensor manipulation (Paris CDG attack), station changes without notice. High: NegRisk structural traps, heartbeat/425 errors. Fixed Paris ICAO LFPG→LFPB. Saved 5 constraint memories. Research doc at .trellis/tasks/archive/2026-05/05-05-05-05-weather-pitfalls-research/research/weather-pitfalls.md
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b43fdba` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
