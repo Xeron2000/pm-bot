@@ -42,3 +42,36 @@ Built pm-bot from scratch across 4 phases: (1) CLI scanner with 5 commands and 3
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: Real CLOB price backtesting with series_slug discovery
+
+**Date**: 2026-05-05
+**Task**: Real CLOB price backtesting with series_slug discovery
+**Branch**: `main`
+
+### Summary
+
+Replaced broken Gamma closed=true pagination with series_slug endpoint (14 city series). Added CLOB /prices-history T-24h price fetching for resolved markets. 30-day real backtest: neg_risk_sum +64% (Sharpe 7.8), narrow_no +55%, gopfan2 +28% (43% MaxDD), sum_arb -19%. Key finding: forecast-derived prices vastly overstate edge vs real CLOB prices.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ec2541b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
