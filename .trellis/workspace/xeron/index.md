@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 5
+- **Total Sessions**: 6
 - **Last Active**: 2026-05-05
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~177 | Active |
+| `journal-1.md` | ~210 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 6 | 2026-05-05 | Pitfall fixes: V2 fees, low-temp cutoff, CLOB robustness | `91f3140` | `main` |
 | 5 | 2026-05-05 | Weather market pitfalls research + Paris ICAO fix | `b43fdba` | `main` |
 | 4 | 2026-05-05 | Intraday METAR observation filtering + strategy research/prune | `a515cd3`, `ed04d5a` | `main` |
 | 3 | 2026-05-05 | Strategy research, prune, and CLOB backtest | `a515cd3` | `main` |

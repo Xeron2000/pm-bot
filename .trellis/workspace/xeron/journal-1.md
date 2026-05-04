@@ -175,3 +175,36 @@ Web research identified 12 pitfall categories in Polymarket weather markets. Cri
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Pitfall fixes: V2 fees, low-temp cutoff, CLOB robustness
+
+**Date**: 2026-05-05
+**Task**: Pitfall fixes: V2 fees, low-temp cutoff, CLOB robustness
+**Branch**: `main`
+
+### Summary
+
+Fixed 6 pitfall categories from weather-pitfalls research: (1) V2 dynamic taker fee replacing hardcoded 5% with feeRateBps×p×(1-p) max 1.25%, (2) low-temp markets use 7AM cutoff not 5PM, (3) HTTP 425 retry with exponential backoff, (4) heartbeat ID recovery after 3 consecutive errors, (5) temperature spike anomaly detection ≥3°C, (6) dynamic ICAO resolution from Wunderground URL in market description. 12 files, +336/-68 lines.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `91f3140` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
