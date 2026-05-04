@@ -52,6 +52,33 @@ def format_order_message(
     )
 
 
+def format_circuit_breaker_message(level: int, reason: str, bankroll: float, kelly_adj: float) -> str:
+    emoji = {1: "🟡", 2: "🟠", 3: "🔴"}.get(level, "⚪")
+    return (
+        f"{emoji} <b>[L{level} CIRCUIT BREAKER]</b>\n"
+        f"  {reason}\n"
+        f"  Bankroll: ${bankroll:.2f} | Kelly adj: {kelly_adj:.0%}"
+    )
+
+
+def format_daily_summary_message(date: str, pnl: float, trades: int, wins: int, losses: int, bankroll: float) -> str:
+    win_rate = wins * 100.0 / max(trades, 1)
+    return (
+        f"📊 <b>Daily Summary — {date}</b>\n"
+        f"  P&L: ${pnl:.2f}\n"
+        f"  Trades: {trades} (W:{wins} L:{losses} → {win_rate:.0f}%)\n"
+        f"  Bankroll: ${bankroll:.2f}"
+    )
+
+
+def format_daemon_message(event: str, detail: str = "") -> str:
+    emoji = {"start": "🟢", "stop": "🔴", "crash_recovery": "🟠"}.get(event, "⚪")
+    msg = f"{emoji} <b>PM-Bot Daemon {event.upper()}</b>"
+    if detail:
+        msg += f"\n  {detail}"
+    return msg
+
+
 async def notify(
     config: dict,
     action: str,

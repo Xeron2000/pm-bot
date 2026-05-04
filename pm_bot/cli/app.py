@@ -11,6 +11,9 @@ app = typer.Typer(
     no_args_is_help=True,
 )
 
+daemon_app = typer.Typer(help="24/7 automated trading daemon", no_args_is_help=True)
+app.add_typer(daemon_app, name="daemon")
+
 
 @app.command()
 def scan(
@@ -121,3 +124,30 @@ def config(
     """Show current configuration or generate template."""
     from pm_bot.cli.config_cmd import run_config
     run_config(init=init)
+
+
+@daemon_app.command("start")
+def daemon_start_cmd(
+    debug: bool = typer.Option(False, "--debug", "-d", help="Enable debug logging"),
+):
+    """Start the 24/7 automated trading daemon."""
+    from pm_bot.cli.daemon import daemon_start
+    asyncio.run(daemon_start(debug=debug))
+
+
+@daemon_app.command("stop")
+def daemon_stop_cmd(
+    debug: bool = typer.Option(False, "--debug", "-d", help="Enable debug logging"),
+):
+    """Stop the running daemon gracefully."""
+    from pm_bot.cli.daemon import daemon_stop
+    asyncio.run(daemon_stop(debug=debug))
+
+
+@daemon_app.command("status")
+def daemon_status_cmd(
+    debug: bool = typer.Option(False, "--debug", "-d", help="Enable debug logging"),
+):
+    """Show daemon status, P&L, and open orders."""
+    from pm_bot.cli.daemon import daemon_status
+    asyncio.run(daemon_status(debug=debug))

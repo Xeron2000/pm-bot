@@ -26,8 +26,25 @@ edge_min = 0.08
 spread = 1.0
 
 [sizing]
-max_single = 5.0
-max_daily = 50.0
+max_single = 50.0
+max_daily = 200.0
+kelly_fraction = 0.25
+max_per_city = 100.0
+max_total_pct = 0.30
+bankroll = 500.0
+
+[risk]
+circuit_breaker_l1 = 0.05
+circuit_breaker_l2 = 0.10
+circuit_breaker_l3 = 0.15
+no_new_position_before_resolution_h = 6
+consecutive_loss_pause_count = 5
+consecutive_loss_pause_minutes = 60
+max_spread = 0.10
+
+[daemon]
+scan_interval = 300
+heartbeat_path = "~/.pm-bot/heartbeat"
 
 [notifications.discord]
 webhook_url = ""

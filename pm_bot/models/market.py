@@ -100,6 +100,8 @@ class Recommendation:
     direction: str  # "YES" or "NO"
     edge: float
     reasoning: str
+    size_usd: float = 0.0
+    kelly_fraction: float = 0.0
 
     @property
     def city(self) -> str:
