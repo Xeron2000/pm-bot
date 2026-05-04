@@ -8,3 +8,7 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Editor / AI tool configs
+.claude/
+.cursor/
