@@ -108,3 +108,37 @@ Researched weather market strategies via web search. Implemented TruncationEdge 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Intraday METAR observation filtering + strategy research/prune
+
+**Date**: 2026-05-05
+**Task**: Intraday METAR observation filtering + strategy research/prune
+**Branch**: `main`
+
+### Summary
+
+Two features: (1) Strategy research → added TruncationEdge + EnsembleSpread, fixed bucket_probability_numpy to floor semantics, pruned 8 negative-EV strategies, 30d real CLOB backtest confirmed 6 positive strategies. (2) METAR observation filtering → AWC API integration for real-time airport temperatures, 5PM local cutoff with floor(observed_high) confirmed bucket logic, --observed flag on scan/trade/watch + daemon auto-integration.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a515cd3` | (see git log) |
+| `ed04d5a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
