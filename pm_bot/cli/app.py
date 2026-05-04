@@ -17,7 +17,7 @@ app.add_typer(daemon_app, name="daemon")
 
 @app.command()
 def scan(
-    strategy: str = typer.Option("all", "--strategy", "-s", help="Strategy: all, gopfan2, sum_arb, ladder, narrow_no, airport_arb"),
+    strategy: str = typer.Option("all", "--strategy", "-s", help="Strategy: all, gopfan2, sum_arb, ladder, narrow_no, airport_arb, metar_obs, resolution_div, neg_risk_sum, cross_corr, station_change, precip_temp"),
     cities: Optional[str] = typer.Option(None, "--cities", "-c", help="Comma-separated cities (e.g. NYC,HK,MIA)"),
     all_cities: bool = typer.Option(False, "--all", help="Scan all available cities"),
     edge: Optional[float] = typer.Option(None, "--edge", "-e", help="Override minimum edge threshold"),
@@ -151,3 +151,28 @@ def daemon_status_cmd(
     """Show daemon status, P&L, and open orders."""
     from pm_bot.cli.daemon import daemon_status
     asyncio.run(daemon_status(debug=debug))
+
+
+@app.command()
+def backtest(
+    strategy: Optional[str] = typer.Option(None, "--strategy", "-s", help="Strategy name"),
+    all_strats: bool = typer.Option(False, "--all", help="Run all strategies"),
+    compare: bool = typer.Option(False, "--compare", help="Side-by-side comparison"),
+    bankroll: float = typer.Option(100.0, "--bankroll", "-b", help="Starting bankroll USD"),
+    days: int = typer.Option(90, "--days", "-d", help="Days to backtest"),
+    cities: Optional[str] = typer.Option("NYC", "--cities", "-c", help="Comma-separated cities"),
+    csv: Optional[str] = typer.Option(None, "--csv", help="Export CSV to path"),
+    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
+):
+    """Run backtest against historical data."""
+    from pm_bot.cli.backtest_cmd import _run_backtest
+    asyncio.run(_run_backtest(
+        strategy=strategy,
+        all_strats=all_strats,
+        compare=compare,
+        bankroll=bankroll,
+        days=days,
+        cities_str=cities,
+        csv_path=csv,
+        debug=debug,
+    ))

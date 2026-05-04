@@ -24,6 +24,7 @@ async def fetch_forecast(
     city: str,
     date: str = "",
     model: str = "gfs_seamless",
+    measure_type: str = "high",
 ) -> ForecastResult | None:
     coords = CITY_COORDS.get(city)
     if not coords:
@@ -31,14 +32,14 @@ async def fetch_forecast(
         return None
 
     lat, lon = coords
-    key = f"{city}:{model}"
+    key = f"{city}:{model}:{measure_type}"
     if key in _forecast_cache:
         return _forecast_cache[key]
 
     params: dict[str, str | int | float] = {
         "latitude": lat,
         "longitude": lon,
-        "daily": "temperature_2m_max",
+        "daily": "temperature_2m_min" if measure_type == "low" else "temperature_2m_max",
         "forecast_days": 3,
         "timezone": "auto",
     }
@@ -79,6 +80,7 @@ async def fetch_forecast(
         date=date,
         model=model,
         temp_high_c=main_temp,
+        measure_type=measure_type,
         members=members,
     )
 

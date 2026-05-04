@@ -58,6 +58,7 @@ class WeatherEvent:
     slug: str
     city: str
     date: str
+    measure_type: str = "high"
     airport_code: str | None = None
     buckets: list[TemperatureBucket] = field(default_factory=list)
 
@@ -76,6 +77,7 @@ class ForecastResult:
     date: str
     model: str
     temp_high_c: float
+    measure_type: str = "high"
     members: list[float] = field(default_factory=list)
 
     @property

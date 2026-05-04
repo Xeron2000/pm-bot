@@ -42,9 +42,9 @@ async def run_scan(
             progress.update(task, description="Fetching forecasts...")
             forecasts = {}
             for ev in events:
-                fc = await fetch_forecast(client, ev.city, ev.date)
+                fc = await fetch_forecast(client, ev.city, ev.date, measure_type=ev.measure_type)
                 if fc:
-                    forecasts[ev.city] = fc
+                    forecasts[(ev.city, ev.measure_type)] = fc
 
             progress.update(task, description="Computing edges...")
             all_recs = []
@@ -53,8 +53,8 @@ async def run_scan(
                     kwargs: dict = {}
                     for k, v in STRATEGY_DEFAULTS.get(strat_name, {}).items():
                         kwargs[k] = edge_override if k in ("edge_min",) and edge_override else v
-                    if strat_name == "ladder" and ev.city in forecasts:
-                        kwargs["forecast"] = forecasts[ev.city]
+                    if (ev.city, ev.measure_type) in forecasts:
+                        kwargs["forecast"] = forecasts[(ev.city, ev.measure_type)]
                     recs = strat.run(ev, **kwargs)
                     if edge_override is not None:
                         recs = [r for r in recs if r.edge >= edge_override]

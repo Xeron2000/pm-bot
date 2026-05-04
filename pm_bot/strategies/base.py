@@ -152,6 +152,12 @@ def get_all_strategies() -> dict[str, Strategy]:
     if _all_strategies is None:
         from pm_bot.strategies.narrow_no import NarrowNoStrategy
         from pm_bot.strategies.airport_arb import AirportArbStrategy
+        from pm_bot.strategies.metar_observation import MetarObservationStrategy
+        from pm_bot.strategies.resolution_divergence import ResolutionDivergenceStrategy
+        from pm_bot.strategies.neg_risk_sum import NegRiskSumStrategy
+        from pm_bot.strategies.cross_market_corr import CrossMarketCorrelationStrategy
+        from pm_bot.strategies.station_change import StationChangeDetectorStrategy
+        from pm_bot.strategies.precip_temp import PrecipTempCorrelationStrategy
 
         _all_strategies = {
             "gopfan2": Gopfan2Strategy(),
@@ -159,6 +165,12 @@ def get_all_strategies() -> dict[str, Strategy]:
             "ladder": LadderStrategy(),
             "narrow_no": NarrowNoStrategy(),
             "airport_arb": AirportArbStrategy(),
+            "metar_obs": MetarObservationStrategy(),
+            "resolution_div": ResolutionDivergenceStrategy(),
+            "neg_risk_sum": NegRiskSumStrategy(),
+            "cross_corr": CrossMarketCorrelationStrategy(),
+            "station_change": StationChangeDetectorStrategy(),
+            "precip_temp": PrecipTempCorrelationStrategy(),
         }
     return _all_strategies
 

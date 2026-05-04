@@ -42,6 +42,12 @@ STRATEGY_DEFAULTS: dict[str, dict[str, float]] = {
     "ladder": {"edge_min": 0.08, "spread": 1.0},
     "narrow_no": {"max_bucket_width_c": 2.0, "no_min": 0.45},
     "airport_arb": {"min_delta_f": 3.0},
+    "metar_obs": {"bankroll": 100.0},
+    "resolution_div": {"bankroll": 100.0},
+    "neg_risk_sum": {"bankroll": 100.0},
+    "cross_corr": {"bankroll": 100.0},
+    "station_change": {"bankroll": 100.0},
+    "precip_temp": {"bankroll": 100.0},
 }
 
 CACHE_TTL: dict[str, int] = {
