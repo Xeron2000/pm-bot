@@ -1,0 +1,708 @@
+"""Fetch real historical market data from Polymarket and Open-Meteo APIs.
+
+Data sources (all free, no auth required):
+- Gamma API: resolved weather events + winning outcomes (single pagination pass)
+- Open-Meteo previous-runs: what forecasts actually said on a given date (batch per city)
+"""
+from __future__ import annotations
+
+import json
+import re
+import sqlite3
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from time import monotonic
+from typing import Any
+
+import httpx
+import structlog
+
+from pm_bot.core.db import DEFAULT_DB_PATH
+from pm_bot.models.config import CITY_COORDS, resolve_city_alias
+from pm_bot.models.market import ForecastResult
+
+log = structlog.get_logger()
+
+GAMMA_BASE = "https://gamma-api.polymarket.com"
+CLOB_BASE = "https://clob.polymarket.com"
+PREVIOUS_RUNS_URL = "https://previous-runs-api.open-meteo.com/v1/forecast"
+
+CLOB_PRICES_URL = "https://clob.polymarket.com/prices-history"
+
+_DEFAULT_STD_C = 2.5
+
+_MIN_REQUEST_INTERVAL = 0.12
+_MAX_RETRIES = 3
+_RETRY_BACKOFF_BASE = 1.0
+
+WEATHER_SERIES_SLUGS: list[str] = [
+    "nyc-daily-weather", "london-daily-weather", "denver-daily-weather",
+    "helsinki-daily-weather", "paris-daily-weather", "tokyo-daily-weather",
+    "chicago-daily-weather", "austin-daily-weather", "seoul-daily-weather",
+    "hong-kong-daily-weather", "warsaw-daily-weather", "lagos-daily-weather",
+    "taipei-daily-weather", "miami-daily-weather",
+]
+
+SERIES_SLUG_TO_CITY: dict[str, str] = {
+    "nyc-daily-weather": "New York",
+    "london-daily-weather": "London",
+    "denver-daily-weather": "Denver",
+    "helsinki-daily-weather": "Helsinki",
+    "paris-daily-weather": "Paris",
+    "tokyo-daily-weather": "Tokyo",
+    "chicago-daily-weather": "Chicago",
+    "austin-daily-weather": "Austin",
+    "seoul-daily-weather": "Seoul",
+    "hong-kong-daily-weather": "Hong Kong",
+    "warsaw-daily-weather": "Warsaw",
+    "lagos-daily-weather": "Lagos",
+    "taipei-daily-weather": "Taipei",
+    "miami-daily-weather": "Miami",
+}
+
+
+@dataclass
+class PricePoint:
+    timestamp: float
+    price: float
+
+
+@dataclass
+class ResolvedMarket:
+    question: str
+    token_id: str
+    outcome: str
+    winning: bool
+    yes_price: float = 0.0
+    no_price: float = 0.0
+    price_history: list[PricePoint] = field(default_factory=list)
+
+
+@dataclass
+class ResolvedEvent:
+    event_id: str
+    title: str
+    slug: str
+    city: str
+    measure_type: str
+    target_date: str
+    markets: list[ResolvedMarket] = field(default_factory=list)
+
+
+_REAL_DATA_SCHEMA = """
+CREATE TABLE IF NOT EXISTS bt_resolved_events (
+    event_id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    slug TEXT NOT NULL,
+    city TEXT NOT NULL,
+    measure_type TEXT NOT NULL DEFAULT 'high',
+    target_date TEXT NOT NULL,
+    raw_json TEXT NOT NULL,
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS bt_price_history (
+    token_id TEXT NOT NULL,
+    ts REAL NOT NULL,
+    price REAL NOT NULL,
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (token_id, ts)
+);
+
+CREATE TABLE IF NOT EXISTS bt_previous_forecasts (
+    city TEXT NOT NULL,
+    date TEXT NOT NULL,
+    model TEXT NOT NULL,
+    temp_high_c REAL NOT NULL,
+    members_json TEXT,
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(city, date, model)
+);
+"""
+
+
+class _RateLimiter:
+    def __init__(self, min_interval: float = _MIN_REQUEST_INTERVAL) -> None:
+        self._min_interval = min_interval
+        self._last: float = 0.0
+
+    async def wait(self) -> None:
+        now = monotonic()
+        elapsed = now - self._last
+        if elapsed < self._min_interval:
+            import asyncio
+            await asyncio.sleep(self._min_interval - elapsed)
+        self._last = monotonic()
+
+
+_CITY_PATTERNS: list[str] = [
+    "New York", "NYC", "Los Angeles", "LA", "Chicago", "Miami", "Dallas",
+    "Atlanta", "London", "Paris", "Hong Kong", "Seoul", "Tokyo",
+    "Shanghai", "Buenos Aires", "Jeddah", "Ankara", "Lagos",
+    "São Paulo", "Sao Paulo",
+]
+
+_CITY_CANONICAL: dict[str, str] = {
+    "NYC": "New York",
+    "LA": "Los Angeles",
+    "New York's Central Park": "New York",
+}
+
+
+def _is_weather_title(title: str) -> bool:
+    t = title.lower()
+    return any(k in t for k in [
+        "temperature", "high temp", "low temp",
+        "highest temp", "lowest temp",
+    ])
+
+
+def _synthesize_ensemble(center: float, std: float = _DEFAULT_STD_C, n: int = 51) -> list[float]:
+    """Generate synthetic ensemble members when real members are unavailable.
+
+    Uses a Gaussian distribution around the deterministic forecast value.
+    GFS 24h temperature forecast std ≈ 2.0-3.0°C depending on lead time
+    and season; 2.5°C is a reasonable middle ground.
+    """
+    import random
+    rng = random.Random(hash(str(center)))
+    return [center + rng.gauss(0, std) for _ in range(n)]
+
+
+def _extract_city(title: str) -> str | None:
+    for c in _CITY_PATTERNS:
+        if c.lower() in title.lower():
+            return resolve_city_alias(_CITY_CANONICAL.get(c, c))
+    return None
+
+
+def _extract_date_iso(title: str) -> str:
+    m = re.search(r"(\d{4}-\d{2}-\d{2})", title)
+    if m:
+        return m.group(1)
+    m = re.search(r"(\w+\s+\d{1,2},?\s+\d{4})", title)
+    if m:
+        try:
+            dt = datetime.strptime(m.group(1).replace(",", ""), "%B %d %Y")
+            return dt.date().isoformat()
+        except ValueError:
+            pass
+    m = re.search(r"on\s+(\w+\s+\d{1,2})", title, re.I)
+    if m:
+        try:
+            year = datetime.now(timezone.utc).year
+            dt = datetime.strptime(m.group(1), "%B %d")
+            return dt.replace(year=year).date().isoformat()
+        except ValueError:
+            pass
+    return ""
+
+
+def _parse_flexible_date(date_str: str, title: str = "") -> Any | None:
+    """Parse a date from various sources: ISO string, title, or endDate.
+
+    Handles formats: '2026-01-22', 'Jan 22', 'November 15th, 2021',
+    'April 23', etc.
+    """
+    import re as _re
+
+    if date_str:
+        for fmt in ("%Y-%m-%d", "%B %d", "%b %d"):
+            try:
+                dt = datetime.strptime(date_str, fmt)
+                if "%Y" not in fmt:
+                    iso = _extract_date_iso(title)
+                    if iso:
+                        try:
+                            year = datetime.strptime(iso[:4], "%Y").year
+                            dt = dt.replace(year=year)
+                        except ValueError:
+                            dt = dt.replace(year=datetime.now(timezone.utc).year)
+                return dt.date()
+            except ValueError:
+                continue
+
+    if title:
+        patterns = [
+            r"(\w+ \d{1,2}(?:st|nd|rd|th)?,?\s*\d{4})",
+            r"(\d{4}-\d{2}-\d{2})",
+            r"(\w+ \d{1,2}(?:st|nd|rd|th)?)",
+        ]
+        for pat in patterns:
+            m = _re.search(pat, title)
+            if m:
+                raw = m.group(1)
+                for fmt in ("%B %d, %Y", "%B %dth, %Y", "%B %dst, %Y",
+                            "%B %dnd, %Y", "%B %drd, %Y",
+                            "%Y-%m-%d", "%B %d"):
+                    cleaned = _re.sub(r'(st|nd|rd|th)', '', raw)
+                    for cf in ("%B %d, %Y", "%B %d %Y", "%Y-%m-%d", "%B %d"):
+                        try:
+                            dt = datetime.strptime(cleaned, cf)
+                            if dt.year < 2020:
+                                continue
+                            return dt.date()
+                        except ValueError:
+                            continue
+    return None
+
+    return None
+
+
+def _detect_measure_type(title: str) -> str:
+    tl = title.lower()
+    if "lowest" in tl or "low temperature" in tl or "low temp" in tl:
+        return "low"
+    return "high"
+
+
+class RealDataFetcher:
+    def __init__(self, db_path: Path | None = None) -> None:
+        self.db_path = db_path or DEFAULT_DB_PATH
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn: sqlite3.Connection | None = None
+        self._limiter = _RateLimiter()
+        self._forecast_cache: dict[str, ForecastResult] = {}
+
+    def _get_conn(self) -> sqlite3.Connection:
+        if self._conn is not None:
+            return self._conn
+        self._conn = sqlite3.connect(str(self.db_path))
+        self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._conn.executescript(_REAL_DATA_SCHEMA)
+        self._conn.commit()
+        return self._conn
+
+    async def _get_with_retry(
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        params: dict | None = None,
+        timeout: float = 30.0,
+    ) -> Any:
+        for attempt in range(_MAX_RETRIES):
+            try:
+                await self._limiter.wait()
+                log.debug("api_request", url=url, params=params, attempt=attempt)
+                resp = await client.get(url, params=params, timeout=timeout)
+                if resp.status_code == 429:
+                    wait = _RETRY_BACKOFF_BASE * (2 ** attempt) * 2
+                    log.warning("rate_limited", url=url, wait_s=wait)
+                    import asyncio
+                    await asyncio.sleep(wait)
+                    continue
+                resp.raise_for_status()
+                return resp.json()
+            except httpx.HTTPError as e:
+                wait = _RETRY_BACKOFF_BASE * (2 ** attempt)
+                log.warning("api_error", url=url, error=str(e), attempt=attempt, wait_s=wait)
+                if attempt < _MAX_RETRIES - 1:
+                    import asyncio
+                    await asyncio.sleep(wait)
+        log.error("api_persistent_failure", url=url)
+        return None
+
+    async def fetch_resolved_weather_events(
+        self,
+        client: httpx.AsyncClient,
+        days: int = 30,
+    ) -> list[ResolvedEvent]:
+        """Fetch resolved weather events via series_slug endpoints.
+
+        Gamma API's closed=true index is broken for new weather markets.
+        Instead, query each city's series directly for reliable results.
+        """
+        conn = self._get_conn()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).date()
+        events: list[ResolvedEvent] = []
+
+        for slug in WEATHER_SERIES_SLUGS:
+            city_name = SERIES_SLUG_TO_CITY.get(slug, "")
+            if not city_name:
+                continue
+
+            page = 0
+            while True:
+                data = await self._get_with_retry(
+                    client,
+                    f"{GAMMA_BASE}/events",
+                    params={
+                        "series_slug": slug,
+                        "limit": 100,
+                        "order": "end_date",
+                        "ascending": False,
+                        "offset": page * 100,
+                    },
+                )
+                if not data or not isinstance(data, list):
+                    break
+
+                for ev in data:
+                    if not ev.get("closed", False):
+                        continue
+
+                    title = ev.get("title", "")
+                    ev_date = _parse_flexible_date("", title)
+                    if ev_date is None:
+                        raw_date = ev.get("endDate", "")
+                        if raw_date:
+                            ev_date = _parse_flexible_date(raw_date[:10], title)
+                    if ev_date is None:
+                        continue
+
+                    if ev_date > datetime.now(timezone.utc).date():
+                        continue
+                    if ev_date < cutoff:
+                        break
+
+                    measure_type = _detect_measure_type(title)
+                    raw_markets = ev.get("markets", [])
+
+                    resolved_markets: list[ResolvedMarket] = []
+                    for m in raw_markets:
+                        rm = self._parse_resolved_market(m)
+                        if rm is not None:
+                            resolved_markets.append(rm)
+
+                    if not resolved_markets:
+                        continue
+
+                    winning_markets = [m for m in resolved_markets if m.winning]
+                    if not winning_markets:
+                        continue
+
+                    ev_id = f"{city_name}-{ev_date.isoformat()}-{measure_type}"
+                    resolved = ResolvedEvent(
+                        event_id=ev_id,
+                        title=title,
+                        slug=ev.get("slug", ""),
+                        city=city_name,
+                        measure_type=measure_type,
+                        target_date=ev_date.isoformat(),
+                        markets=resolved_markets,
+                    )
+                    events.append(resolved)
+
+                    try:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO bt_resolved_events (event_id, title, city, target_date, measure_type, slug) VALUES (?, ?, ?, ?, ?, ?)",
+                            (ev_id, title, city_name, ev_date.isoformat(), measure_type, ev.get("slug", "")),
+                        )
+                    except sqlite3.Error:
+                        pass
+
+                if len(data) < 100:
+                    break
+                page += 1
+
+        conn.commit()
+        log.info("resolved_events_fetched", count=len(events), days=days)
+        return events
+
+    async def fetch_clob_price_at(
+        self,
+        client: httpx.AsyncClient,
+        token_id: str,
+        target_ts: float,
+        window_hours: float = 24.0,
+        fidelity: int = 60,
+    ) -> float | None:
+        """Fetch CLOB market price closest to target_ts for a given token.
+
+        Returns the price at the closest available data point within
+        window_hours of target_ts, or None if unavailable.
+        """
+        window_s = int(window_hours * 3600)
+        start_ts = max(0, int(target_ts - window_s))
+        end_ts = int(target_ts + window_s)
+
+        data = await self._get_with_retry(
+            client,
+            CLOB_PRICES_URL,
+            params={
+                "market": token_id,
+                "startTs": start_ts,
+                "endTs": end_ts,
+                "fidelity": fidelity,
+            },
+        )
+        if not data or "history" not in data:
+            return None
+
+        history = data["history"]
+        if not history:
+            return None
+
+        closest = min(history, key=lambda p: abs(p["t"] - target_ts))
+        return float(closest["p"])
+
+    async def enrich_events_with_clob_prices(
+        self,
+        client: httpx.AsyncClient,
+        events: list[ResolvedEvent],
+        hours_before_settlement: float = 24.0,
+    ) -> None:
+        """Enrich ResolvedEvent markets with CLOB T-24h prices.
+
+        For each market's YES token, fetches the price at
+        (settlement_time - hours_before_settlement). Falls back to
+        forecast-derived probability if CLOB data unavailable.
+        """
+        for ev in events:
+            for m in ev.markets:
+                if not m.token_id or len(m.token_id) < 20:
+                    continue
+
+                raw_date = ev.target_date
+                try:
+                    dt = datetime.strptime(raw_date, "%Y-%m-%d").replace(
+                        tzinfo=timezone.utc,
+                        hour=12,
+                    )
+                except ValueError:
+                    continue
+
+                target_ts = dt.timestamp() - (hours_before_settlement * 3600)
+                price = await self.fetch_clob_price_at(client, m.token_id, target_ts)
+                if price is not None and 0.01 <= price <= 0.99:
+                    m.yes_price = price
+                    m.no_price = 1.0 - price
+
+    def _parse_resolved_market(self, m: dict) -> ResolvedMarket | None:
+        """Parse a single market (bucket) from Gamma /markets endpoint.
+
+        Weather market questions contain °F or °C. Each market IS a bucket.
+        outcomePrices: ["0.95", "0.05"] means Yes=0.95, No=0.05.
+        The winning bucket has Yes price ~1.0.
+        """
+        question = m.get("question", "")
+        has_temp = any(c in question for c in ("°F", "°f", "°C", "°c"))
+        if not has_temp:
+            return None
+
+        clob_token_ids_raw = m.get("clobTokenIds", "")
+        token_ids: list[str] = []
+        if isinstance(clob_token_ids_raw, str) and clob_token_ids_raw:
+            try:
+                token_ids = json.loads(clob_token_ids_raw)
+            except json.JSONDecodeError:
+                token_ids = []
+        elif isinstance(clob_token_ids_raw, list):
+            token_ids = [str(t) for t in clob_token_ids_raw]
+
+        if not token_ids:
+            yes_token = str(m.get("id", ""))
+            if not yes_token:
+                return None
+        else:
+            yes_token = token_ids[0]
+
+        outcomes_raw = m.get("outcomes", "")
+        prices_raw = m.get("outcomePrices", "")
+
+        outcome_list: list[str] = []
+        price_list: list[float] = []
+
+        if isinstance(outcomes_raw, str):
+            outcome_list = [o.strip().strip('"') for o in outcomes_raw.strip("[]").split(",")]
+        if isinstance(prices_raw, str):
+            for p in prices_raw.strip("[]").split(","):
+                try:
+                    price_list.append(float(p.strip().strip('"')))
+                except ValueError:
+                    price_list.append(0.0)
+
+        yes_price = 0.0
+        no_price = 0.0
+        winning = False
+        for o_str, p_val in zip(outcome_list, price_list):
+            if o_str.upper() == "YES":
+                yes_price = p_val
+                if p_val >= 0.95:
+                    winning = True
+            elif o_str.upper() == "NO":
+                no_price = p_val
+
+        return ResolvedMarket(
+            question=question,
+            token_id=yes_token,
+            outcome="Yes" if winning else "No",
+            winning=winning,
+            yes_price=yes_price,
+            no_price=no_price,
+        )
+
+    async def prefetch_forecasts(
+        self,
+        client: httpx.AsyncClient,
+        cities: list[str],
+        days: int,
+    ) -> None:
+        """Batch-fetch historical forecasts for all cities via previous-runs API.
+
+        One API call per city covers the entire date range — much faster than
+        per-event fetching.
+        """
+        conn = self._get_conn()
+        model = "gfs_seamless"
+
+        for city in cities:
+            canonical = resolve_city_alias(city)
+            coords = CITY_COORDS.get(canonical) or CITY_COORDS.get(city)
+            if not coords:
+                log.warning("unknown_city_coords", city=city)
+                continue
+
+            lat, lon = coords
+
+            for measure_type in ("high", "low"):
+                daily_var = "temperature_2m_max" if measure_type == "high" else "temperature_2m_min"
+
+                try:
+                    resp = await client.get(
+                        PREVIOUS_RUNS_URL,
+                        params={
+                            "latitude": lat,
+                            "longitude": lon,
+                            "daily": daily_var,
+                            "models": model,
+                            "past_days": min(days, 365),
+                            "timezone": "auto",
+                        },
+                        timeout=30.0,
+                    )
+                    resp.raise_for_status()
+                    data = resp.json()
+                except httpx.HTTPError as e:
+                    log.warning("previous_runs_fetch_failed", city=city, error=str(e))
+                    continue
+
+                daily = data.get("daily", {})
+                times = daily.get("time", [])
+                temps = daily.get(daily_var, [])
+
+                for i, t in enumerate(times):
+                    if i >= len(temps) or not isinstance(temps[i], (int, float)):
+                        continue
+
+                    cache_key = f"{canonical}:{t}:{measure_type}"
+                    if cache_key in self._forecast_cache:
+                        continue
+
+                    members: list[float] = []
+                    for mi in range(1, 36):
+                        key = f"{daily_var}_member{mi:02d}"
+                        m_data = daily.get(key, [])
+                        if i < len(m_data) and isinstance(m_data[i], (int, float)):
+                            members.append(float(m_data[i]))
+
+                    if not members:
+                        members = _synthesize_ensemble(float(temps[i]))
+
+                    fr = ForecastResult(
+                        city=canonical, date=t, model=model,
+                        temp_high_c=float(temps[i]),
+                        measure_type=measure_type, members=members,
+                    )
+                    self._forecast_cache[cache_key] = fr
+
+                    try:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO bt_previous_forecasts (city, date, model, temp_high_c, members_json) VALUES (?, ?, ?, ?, ?)",
+                            (canonical, t, model, float(temps[i]), json.dumps(members)),
+                        )
+                    except sqlite3.Error:
+                        pass
+
+            conn.commit()
+
+        log.info("forecasts_prefetched", cities=len(cities), cached=len(self._forecast_cache))
+
+    def get_cached_forecast(self, city: str, date: str, measure_type: str = "high") -> ForecastResult | None:
+        canonical = resolve_city_alias(city)
+        cache_key = f"{canonical}:{date}:{measure_type}"
+        if cache_key in self._forecast_cache:
+            return self._forecast_cache[cache_key]
+
+        conn = self._get_conn()
+        model = "gfs_seamless"
+        row = conn.execute(
+            "SELECT * FROM bt_previous_forecasts WHERE city = ? AND date = ? AND model = ?",
+            (canonical, date, model),
+        ).fetchone()
+        if row:
+            cached_members = json.loads(row["members_json"]) if row["members_json"] else []
+            fr = ForecastResult(
+                city=canonical, date=date, model=model,
+                temp_high_c=row["temp_high_c"], measure_type=measure_type,
+                members=cached_members,
+            )
+            self._forecast_cache[cache_key] = fr
+            return fr
+        return None
+
+    async def fetch_market_prices(
+        self,
+        client: httpx.AsyncClient,
+        token_ids: list[str],
+        start_ts: float,
+        end_ts: float,
+    ) -> dict[str, list[PricePoint]]:
+        conn = self._get_conn()
+        result: dict[str, list[PricePoint]] = {}
+
+        uncached: list[str] = []
+        for tid in token_ids:
+            rows = conn.execute(
+                "SELECT ts, price FROM bt_price_history WHERE token_id = ? AND ts >= ? AND ts <= ? ORDER BY ts",
+                (tid, start_ts, end_ts),
+            ).fetchall()
+            if rows:
+                result[tid] = [PricePoint(timestamp=r["ts"], price=r["price"]) for r in rows]
+            else:
+                uncached.append(tid)
+
+        if not uncached:
+            return result
+
+        for batch_start in range(0, len(uncached), 20):
+            batch = uncached[batch_start:batch_start + 20]
+            for tid in batch:
+                data = await self._get_with_retry(
+                    client,
+                    f"{CLOB_BASE}/prices-history",
+                    params={"market": tid, "startTs": int(start_ts), "endTs": int(end_ts)},
+                )
+                if data is None or not isinstance(data, dict):
+                    continue
+                history = data.get("history", [])
+                points: list[PricePoint] = []
+                for h in history:
+                    if isinstance(h, dict):
+                        t = h.get("t", 0)
+                        p = h.get("p", 0.0)
+                        if t and p is not None:
+                            try:
+                                points.append(PricePoint(timestamp=float(t), price=float(p)))
+                            except (ValueError, TypeError):
+                                continue
+                if points:
+                    result[tid] = points
+                    for pt in points:
+                        try:
+                            conn.execute(
+                                "INSERT OR IGNORE INTO bt_price_history (token_id, ts, price) VALUES (?, ?, ?)",
+                                (tid, pt.timestamp, pt.price),
+                            )
+                        except sqlite3.Error:
+                            pass
+
+        conn.commit()
+        return result
+
+    def close(self) -> None:
+        if self._conn:
+            self._conn.close()
+            self._conn = None

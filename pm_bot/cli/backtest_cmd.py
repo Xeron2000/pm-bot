@@ -26,6 +26,7 @@ def backtest_run(
     days: int = typer.Option(90, "--days", "-d", help="Number of days to backtest"),
     cities: Optional[str] = typer.Option("NYC", "--cities", "-c", help="Comma-separated cities"),
     csv_path: Optional[str] = typer.Option(None, "--csv", help="Export results to CSV file"),
+    real: bool = typer.Option(False, "--real", help="Use real Polymarket historical prices and resolved outcomes"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ):
     """Run backtest against historical data."""
@@ -38,6 +39,7 @@ def backtest_run(
         days=days,
         cities_str=cities,
         csv_path=csv_path,
+        real=real,
         debug=debug,
     ))
 
@@ -50,6 +52,7 @@ async def _run_backtest(
     days: int,
     cities_str: str | None,
     csv_path: str | None,
+    real: bool,
     debug: bool,
 ) -> None:
     _setup_logging(debug)
@@ -66,7 +69,8 @@ async def _run_backtest(
 
     city_list = [c.strip() for c in cities_str.split(",")] if cities_str else ["NYC"]
 
-    console.print(f"[bold]Running backtest: {len(strats)} strategies, {days} days, ${bankroll:.0f} bankroll[/bold]")
+    mode_label = "real market data" if real else "synthetic prices"
+    console.print(f"[bold]Running backtest ({mode_label}): {len(strats)} strategies, {days} days, ${bankroll:.0f} bankroll[/bold]")
 
     engine = BacktestEngine(
         strategies=strats,
@@ -76,7 +80,10 @@ async def _run_backtest(
         cities=city_list,
     )
 
-    results = await engine.run()
+    if real:
+        results = await engine.run_real()
+    else:
+        results = await engine.run()
 
     if not results:
         console.print("[yellow]No results produced.[/yellow]")

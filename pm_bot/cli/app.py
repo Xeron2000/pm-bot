@@ -162,6 +162,7 @@ def backtest(
     days: int = typer.Option(90, "--days", "-d", help="Days to backtest"),
     cities: Optional[str] = typer.Option("NYC", "--cities", "-c", help="Comma-separated cities"),
     csv: Optional[str] = typer.Option(None, "--csv", help="Export CSV to path"),
+    real: bool = typer.Option(False, "--real", help="Use real Polymarket historical prices and resolved outcomes"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ):
     """Run backtest against historical data."""
@@ -174,5 +175,6 @@ def backtest(
         days=days,
         cities_str=cities,
         csv_path=csv,
+        real=real,
         debug=debug,
     ))
