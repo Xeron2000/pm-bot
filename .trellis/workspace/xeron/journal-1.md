@@ -75,3 +75,36 @@ Replaced broken Gamma closed=true pagination with series_slug endpoint (14 city 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Strategy research, prune, and CLOB backtest
+
+**Date**: 2026-05-05
+**Task**: Strategy research, prune, and CLOB backtest
+**Branch**: `main`
+
+### Summary
+
+Researched weather market strategies via web search. Implemented TruncationEdge (truncation bias) and EnsembleSpread (forecast spread → tail underpricing). Fixed bucket_probability_numpy to use floor semantics matching Polymarket truncation. Ran 30-day real CLOB price backtest across NYC+London. Pruned 8 negative/marginal-EV strategies (sum_arb, station_change, airport_arb, metar_obs, cross_corr, precip_temp, ladder, station_bias). Final 6 positive-EV strategies: ensemble_spread +91%, narrow_no +55%, neg_risk_sum +51%, truncation_edge +41%, gopfan2 +29%, resolution_div +0.3%.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a515cd3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
