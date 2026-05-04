@@ -77,12 +77,10 @@ async def run_trade(
                 kwargs: dict = {}
                 for k, v in STRATEGY_DEFAULTS.get(strat_name, {}).items():
                     kwargs[k] = edge_override if k in ("edge_min",) and edge_override else v
-                if strat_name == "ladder" and ev.city in forecasts:
+                if strat_name in ("truncation_edge", "ensemble_spread") and ev.city in forecasts:
                     kwargs["forecast"] = forecasts[ev.city]
-                if strat_name == "airport_arb":
+                if strat_name == "ensemble_spread":
                     kwargs["config"] = config
-                    kwargs["airport_forecast"] = airport_forecasts.get(ev.city)
-                    kwargs["city_forecast"] = city_forecasts.get(ev.city)
                 recs = strat.run(ev, **kwargs)
                 if edge_override is not None:
                     recs = [r for r in recs if r.edge >= edge_override]

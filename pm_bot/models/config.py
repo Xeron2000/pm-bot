@@ -38,16 +38,11 @@ DEFAULT_CITIES = ["NYC", "London", "Hong Kong", "Miami", "Dallas", "Atlanta", "S
 
 STRATEGY_DEFAULTS: dict[str, dict[str, float]] = {
     "gopfan2": {"yes_max": 0.15, "no_min": 0.45},
-    "sum_arb": {"gap_min": 0.02},
-    "ladder": {"edge_min": 0.08, "spread": 1.0},
     "narrow_no": {"max_bucket_width_c": 2.0, "no_min": 0.45},
-    "airport_arb": {"min_delta_f": 3.0},
-    "metar_obs": {"bankroll": 100.0},
     "resolution_div": {"bankroll": 100.0},
     "neg_risk_sum": {"bankroll": 100.0},
-    "cross_corr": {"bankroll": 100.0},
-    "station_change": {"bankroll": 100.0},
-    "precip_temp": {"bankroll": 100.0},
+    "truncation_edge": {"edge_min": 0.03},
+    "ensemble_spread": {"edge_min": 0.05},
 }
 
 CACHE_TTL: dict[str, int] = {

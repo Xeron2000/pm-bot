@@ -88,16 +88,32 @@ async def fetch_forecast(
     return result
 
 
+_TAIL_BOUND = 999.0
+
+
 def bucket_probability_numpy(forecast: ForecastResult, temp_low_c: float, temp_high_c: float) -> float:
     if forecast.members:
         arr = np.array(forecast.members)
-        count = float(np.sum((arr >= temp_low_c - 0.5) & (arr <= temp_high_c + 0.5)))
+        truncated = np.floor(arr)
+        if temp_high_c >= _TAIL_BOUND:
+            count = float(np.sum(truncated >= temp_low_c))
+        elif temp_low_c <= -_TAIL_BOUND:
+            count = float(np.sum(truncated <= temp_high_c))
+        else:
+            count = float(np.sum((truncated >= temp_low_c) & (truncated <= temp_high_c)))
         return count / len(forecast.members)
 
     mean = forecast.temp_high_c
-    std = 1.5
-    z_low = (temp_low_c - 0.5 - mean) / std
-    z_high = (temp_high_c + 0.5 - mean) / std
+    std = forecast.std if forecast.std > 0.5 else 2.5
     from math import erf, sqrt
-    p = 0.5 * (erf(z_high / sqrt(2)) - erf(z_low / sqrt(2)))
+    if temp_high_c >= _TAIL_BOUND:
+        z = (temp_low_c - mean) / std
+        p = 0.5 * (1.0 - erf(z / sqrt(2)))
+    elif temp_low_c <= -_TAIL_BOUND:
+        z = (temp_high_c - mean) / std
+        p = 0.5 * (1.0 + erf(z / sqrt(2)))
+    else:
+        z_low = (temp_low_c - mean) / std
+        z_high = (temp_high_c + 1.0 - mean) / std
+        p = 0.5 * (erf(z_high / sqrt(2)) - erf(z_low / sqrt(2)))
     return max(0.0, min(1.0, p))

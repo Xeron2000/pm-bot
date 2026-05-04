@@ -50,7 +50,7 @@ async def run_explain(market_id: str, debug: bool = False) -> None:
 
     for strat_name, strat in ALL_STRATEGIES.items():
         kwargs: dict = dict(STRATEGY_DEFAULTS.get(strat_name, {}))
-        if strat_name == "ladder" and forecast:
+        if strat_name in ("truncation_edge", "ensemble_spread") and forecast:
             kwargs["forecast"] = forecast
         recs = strat.run(target, **kwargs)
 

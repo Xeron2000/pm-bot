@@ -145,9 +145,9 @@ class TradingDaemon:
                     kwargs: dict[str, Any] = {}
                     for k, v in STRATEGY_DEFAULTS.get(strat_name, {}).items():
                         kwargs[k] = v
-                    if strat_name == "ladder" and ev.city in forecasts:
+                    if strat_name in ("truncation_edge", "ensemble_spread") and ev.city in forecasts:
                         kwargs["forecast"] = forecasts[ev.city]
-                    if strat_name == "airport_arb":
+                    if strat_name == "ensemble_spread":
                         kwargs["config"] = self.config
                         station_info = get_station_for_city(self.config, ev.city)
                         if station_info:
