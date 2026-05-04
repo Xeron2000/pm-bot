@@ -16,7 +16,7 @@ CITY_ICAO: dict[str, str] = {
     "London": "EGLL",
     "Denver": "KDEN",
     "Helsinki": "EFHK",
-    "Paris": "LFPG",
+    "Paris": "LFPB",
     "Tokyo": "RJTT",
     "Chicago": "KORD",
     "Austin": "KAUS",
