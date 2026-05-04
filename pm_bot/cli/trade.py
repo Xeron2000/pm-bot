@@ -8,6 +8,7 @@ from rich.prompt import Confirm
 from pm_bot.core.polymarket import fetch_weather_events
 from pm_bot.core.weather import fetch_forecast
 from pm_bot.core.clob import ClobTrader
+from pm_bot.core.observation import fetch_observed_high, filter_recommendations
 from pm_bot.core.config_loader import load_config, get_station_for_city
 from pm_bot.strategies.base import ALL_STRATEGIES, Strategy
 from pm_bot.models.config import DEFAULT_CITIES, STRATEGY_DEFAULTS, resolve_city_alias, CITY_COORDS
@@ -26,6 +27,7 @@ async def run_trade(
     edge_override: float | None = None,
     include_closed: bool = False,
     confirm: bool = False,
+    observed: bool = False,
     debug: bool = False,
 ) -> None:
     _setup_logging(debug)
@@ -85,6 +87,22 @@ async def run_trade(
                 if edge_override is not None:
                     recs = [r for r in recs if r.edge >= edge_override]
                 all_recs.extend(recs)
+
+        if observed:
+            from typing import Any
+            obs_highs: dict[str, Any] = {}
+            for city in {ev.city for ev in events}:
+                obs = await fetch_observed_high(client, city)
+                if obs:
+                    obs_highs[city] = obs
+            filtered = []
+            for r in all_recs:
+                if r.city in obs_highs:
+                    remaining = filter_recommendations([r], obs_highs[r.city])
+                    filtered.extend(remaining)
+                else:
+                    filtered.append(r)
+            all_recs = filtered
 
     if not all_recs:
         console.print("[dim]No edges found above threshold.[/dim]")

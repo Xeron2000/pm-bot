@@ -23,6 +23,7 @@ def scan(
     edge: Optional[float] = typer.Option(None, "--edge", "-e", help="Override minimum edge threshold"),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Show detailed reasoning"),
     closed: bool = typer.Option(False, "--closed", help="Include closed/settled markets"),
+    observed: bool = typer.Option(False, "--observed", help="Filter with METAR observed temperatures (5PM+ local)"),
     debug: bool = typer.Option(False, "--debug", "-d", help="Enable debug logging"),
 ):
     """Scan markets and output strategy recommendations."""
@@ -34,6 +35,7 @@ def scan(
         edge_override=edge,
         verbose=verbose,
         include_closed=closed,
+        observed=observed,
         debug=debug,
     ))
 
@@ -59,6 +61,7 @@ def watch(
     edge: Optional[float] = typer.Option(None, "--edge", "-e", help="Override edge threshold"),
     closed: bool = typer.Option(False, "--closed", help="Include closed/settled markets"),
     no_ws: bool = typer.Option(False, "--no-ws", help="Disable WebSocket, use polling only"),
+    observed: bool = typer.Option(False, "--observed", help="Filter with METAR observed temperatures (5PM+ local)"),
     debug: bool = typer.Option(False, "--debug", "-d", help="Enable debug logging"),
 ):
     """TUI continuous monitoring mode with WebSocket real-time prices."""
@@ -71,6 +74,7 @@ def watch(
         edge_override=edge,
         include_closed=closed,
         use_ws=not no_ws,
+        observed=observed,
         debug=debug,
     ))
 
@@ -93,6 +97,7 @@ def trade(
     edge: Optional[float] = typer.Option(None, "--edge", "-e", help="Override edge threshold"),
     closed: bool = typer.Option(False, "--closed", help="Include closed/settled markets"),
     confirm: bool = typer.Option(False, "--confirm", help="Confirm and execute trades (requires CLOB credentials)"),
+    observed: bool = typer.Option(False, "--observed", help="Filter with METAR observed temperatures (5PM+ local)"),
     debug: bool = typer.Option(False, "--debug", "-d", help="Enable debug logging"),
 ):
     """Scan markets and optionally execute trades with confirmation."""
@@ -104,6 +109,7 @@ def trade(
         edge_override=edge,
         include_closed=closed,
         confirm=confirm,
+        observed=observed,
         debug=debug,
     ))
 
