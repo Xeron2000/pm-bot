@@ -8,7 +8,7 @@ from rich.prompt import Confirm
 from pm_bot.core.polymarket import fetch_weather_events
 from pm_bot.core.weather import fetch_forecast
 from pm_bot.core.clob import ClobTrader
-from pm_bot.core.observation import fetch_observed_high, filter_recommendations
+from pm_bot.core.observation import fetch_observation, filter_recommendations
 from pm_bot.core.config_loader import load_config, get_station_for_city
 from pm_bot.strategies.base import ALL_STRATEGIES, Strategy
 from pm_bot.models.config import DEFAULT_CITIES, STRATEGY_DEFAULTS, resolve_city_alias, CITY_COORDS
@@ -90,15 +90,16 @@ async def run_trade(
 
         if observed:
             from typing import Any
-            obs_highs: dict[str, Any] = {}
-            for city in {ev.city for ev in events}:
-                obs = await fetch_observed_high(client, city)
+            obs_map: dict[tuple[str, str], Any] = {}
+            for city, mt in {(ev.city, ev.measure_type) for ev in events}:
+                obs = await fetch_observation(client, city, measure_type=mt)
                 if obs:
-                    obs_highs[city] = obs
+                    obs_map[(city, mt)] = obs
             filtered = []
             for r in all_recs:
-                if r.city in obs_highs:
-                    remaining = filter_recommendations([r], obs_highs[r.city])
+                key = (r.city, r.event.measure_type)
+                if key in obs_map:
+                    remaining = filter_recommendations([r], obs_map[key])
                     filtered.extend(remaining)
                 else:
                     filtered.append(r)

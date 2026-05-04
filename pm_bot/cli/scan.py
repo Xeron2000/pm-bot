@@ -9,7 +9,7 @@ from typing import Any
 
 from pm_bot.core.polymarket import fetch_weather_events
 from pm_bot.core.weather import fetch_forecast
-from pm_bot.core.observation import fetch_observed_high, filter_recommendations
+from pm_bot.core.observation import fetch_observation, filter_recommendations
 from pm_bot.strategies.base import ALL_STRATEGIES, Strategy
 from pm_bot.models.config import DEFAULT_CITIES, STRATEGY_DEFAULTS, resolve_city_alias
 from pm_bot.cli.display import render_recommendations, render_verbose
@@ -50,13 +50,13 @@ async def run_scan(
                 if fc:
                     forecasts[(ev.city, ev.measure_type)] = fc
 
-            obs_highs: dict[str, Any] = {}
+            obs_map: dict[tuple[str, str], Any] = {}
             if observed:
                 progress.update(task, description="Fetching observations...")
-                for city in {ev.city for ev in events}:
-                    obs = await fetch_observed_high(client, city)
+                for city, mt in {(ev.city, ev.measure_type) for ev in events}:
+                    obs = await fetch_observation(client, city, measure_type=mt)
                     if obs:
-                        obs_highs[city] = obs
+                        obs_map[(city, mt)] = obs
 
             progress.update(task, description="Computing edges...")
             all_recs = []
@@ -70,8 +70,8 @@ async def run_scan(
                     recs = strat.run(ev, **kwargs)
                     if edge_override is not None:
                         recs = [r for r in recs if r.edge >= edge_override]
-                    if ev.city in obs_highs:
-                        recs = filter_recommendations(recs, obs_highs[ev.city])
+                    if (ev.city, ev.measure_type) in obs_map:
+                        recs = filter_recommendations(recs, obs_map[(ev.city, ev.measure_type)])
                     all_recs.extend(recs)
 
     if verbose:

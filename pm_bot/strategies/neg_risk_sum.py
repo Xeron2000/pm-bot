@@ -11,7 +11,12 @@ log = structlog.get_logger()
 class NegRiskSumStrategy(Strategy):
     name = "neg_risk_sum"
 
-    TAKER_FEE = 0.05
+    TAKER_FEE_RATE_BPS = 100
+    TAKER_FEE_MAX = 0.0125
+
+    def _taker_fee(self, price: float) -> float:
+        from pm_bot.core.clob import compute_v2_taker_fee
+        return min(compute_v2_taker_fee(self.TAKER_FEE_RATE_BPS, price), self.TAKER_FEE_MAX)
 
     def run(self, event: WeatherEvent, **kwargs) -> list[Recommendation]:
         defaults = self.get_defaults()
@@ -25,7 +30,7 @@ class NegRiskSumStrategy(Strategy):
         recs: list[Recommendation] = []
 
         if sum_yes < 0.98:
-            net_edge = 1.0 - sum_yes - self.TAKER_FEE * sum_yes
+            net_edge = 1.0 - sum_yes - self._taker_fee(0.5) * sum_yes
             if net_edge > 0.01:
                 for b in active_buckets:
                     if b.yes_price <= 0:
@@ -46,7 +51,7 @@ class NegRiskSumStrategy(Strategy):
             forecast = kwargs.get("forecast")
             if forecast is None:
                 excess = sum_yes - 1.0
-                net_excess = excess * (1.0 - self.TAKER_FEE)
+                net_excess = excess * (1.0 - self._taker_fee(0.5))
                 if net_excess > 0.01:
                     top = sorted(active_buckets, key=lambda b: b.yes_price, reverse=True)[:3]
                     for b in top:
@@ -69,7 +74,7 @@ class NegRiskSumStrategy(Strategy):
                 for b, model_prob in overpriced[:3]:
                     no_edge = (1.0 - model_prob) - b.no_price
                     if no_edge > 0.01:
-                        net_edge = no_edge * (1.0 - self.TAKER_FEE)
+                        net_edge = no_edge * (1.0 - self._taker_fee(b.yes_price))
                         size = bankroll * 0.25 * net_edge
                         recs.append(Recommendation(
                             strategy=self.name,

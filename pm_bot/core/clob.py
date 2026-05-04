@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import threading
 import time
-from typing import Any
+from typing import Any, Callable, TypeVar
 
+import httpx
 import structlog
 
 from pm_bot.core.config_loader import get_clob_creds, get_private_key, get_sizing, load_config
@@ -12,6 +13,30 @@ log = structlog.get_logger()
 
 CLOB_HOST = "https://clob.polymarket.com"
 CHAIN_ID = 137
+DEFAULT_HTTP_TIMEOUT = 15.0
+MAX_425_RETRIES = 3
+HEARTBEAT_RECOVERY_ATTEMPTS = 3
+
+
+def compute_v2_taker_fee(fee_rate_bps: int, price: float) -> float:
+    return (fee_rate_bps / 10000.0) * price * (1.0 - price)
+
+
+T = TypeVar("T")
+
+
+def _retry_on_425(fn: Callable[[], T], max_retries: int = MAX_425_RETRIES) -> T:
+    for attempt in range(max_retries + 1):
+        try:
+            return fn()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 425 and attempt < max_retries:
+                wait = 2 ** attempt * 5
+                log.warning("425_matching_engine_restart", attempt=attempt, retry_after_s=wait)
+                time.sleep(wait)
+                continue
+            raise
+    raise RuntimeError("unreachable")
 
 
 class ClobTrader:
@@ -60,6 +85,20 @@ class ClobTrader:
             return f"Daily limit ${sizing['max_daily']:.2f} reached (remaining: ${remaining:.2f})"
         return None
 
+    def _recover_heartbeat_id(self) -> str:
+        for _ in range(HEARTBEAT_RECOVERY_ATTEMPTS):
+            try:
+                client = self._get_client()
+                resp = client.post_heartbeat("")  # type: ignore[attr-defined]
+                if isinstance(resp, dict) and "heartbeat_id" in resp:
+                    new_id = str(resp["heartbeat_id"])
+                    log.info("heartbeat_id_recovered", new_id=new_id)
+                    return new_id
+            except Exception as e2:
+                log.warning("heartbeat_recovery_failed", error=str(e2))
+                time.sleep(2)
+        return self._heartbeat_id
+
     def place_limit_buy(
         self,
         token_id: str,
@@ -74,12 +113,12 @@ class ClobTrader:
             log.error("sizing_check_failed", error=err)
             return None
 
-        try:
+        def _place() -> dict:
             from py_clob_client_v2 import OrderArgs, OrderType, PartialCreateOrderOptions  # type: ignore[import-untyped]
             from py_clob_client_v2.order_builder.constants import BUY  # type: ignore[import-untyped]
 
             client = self._get_client()
-            response = client.create_and_post_order(  # type: ignore[attr-defined]
+            return client.create_and_post_order(  # type: ignore[attr-defined,no-any-return]
                 order_args=OrderArgs(
                     token_id=token_id,
                     price=price,
@@ -92,8 +131,11 @@ class ClobTrader:
                 ),
                 order_type=OrderType.GTC,
             )
+
+        try:
+            response = _retry_on_425(_place)
             self._daily_spent += amount_usd
-            log.info("order_placed", token_id=token_id, side="BUY", price=price, size=size, response=response)
+            log.info("order_placed", token_id=token_id, side="BUY", price=price, size=size)
             return response  # type: ignore[no-any-return]
         except Exception as e:
             log.error("order_failed", token_id=token_id, error=str(e))
@@ -113,12 +155,12 @@ class ClobTrader:
             log.error("sizing_check_failed", error=err)
             return None
 
-        try:
+        def _place() -> dict:
             from py_clob_client_v2 import OrderArgs, OrderType, PartialCreateOrderOptions  # type: ignore[import-untyped]
             from py_clob_client_v2.order_builder.constants import SELL  # type: ignore[import-untyped]
 
             client = self._get_client()
-            response = client.create_and_post_order(  # type: ignore[attr-defined]
+            return client.create_and_post_order(  # type: ignore[attr-defined,no-any-return]
                 order_args=OrderArgs(
                     token_id=token_id,
                     price=price,
@@ -131,6 +173,9 @@ class ClobTrader:
                 ),
                 order_type=OrderType.GTC,
             )
+
+        try:
+            response = _retry_on_425(_place)
             log.info("order_placed", token_id=token_id, side="SELL", price=price, size=size)
             return response  # type: ignore[no-any-return]
         except Exception as e:
@@ -150,12 +195,12 @@ class ClobTrader:
             log.error("sizing_check_failed", error=err)
             return None
 
-        try:
+        def _place() -> dict:
             from py_clob_client_v2 import MarketOrderArgs, OrderType, PartialCreateOrderOptions  # type: ignore[import-untyped]
             from py_clob_client_v2.order_builder.constants import BUY  # type: ignore[import-untyped]
 
             client = self._get_client()
-            response = client.create_and_post_market_order(  # type: ignore[attr-defined]
+            return client.create_and_post_market_order(  # type: ignore[attr-defined,no-any-return]
                 order_args=MarketOrderArgs(
                     token_id=token_id,
                     side=BUY,
@@ -168,8 +213,11 @@ class ClobTrader:
                 ),
                 order_type=OrderType.FOK,
             )
+
+        try:
+            response = _retry_on_425(_place)
             self._daily_spent += amount
-            log.info("market_order_placed", token_id=token_id, side="BUY", amount=amount, response=response)
+            log.info("market_order_placed", token_id=token_id, side="BUY", amount=amount)
             return response  # type: ignore[no-any-return]
         except Exception as e:
             log.error("market_order_failed", token_id=token_id, error=str(e))
@@ -238,6 +286,22 @@ class ClobTrader:
             log.warning("neg_risk_check_failed", token_id=token_id, error=str(e))
             return True
 
+    def fetch_market_fee_rate_bps(self, condition_id: str) -> int | None:
+        try:
+            import httpx
+            resp = httpx.get(
+                f"{CLOB_HOST}/markets/{condition_id}",
+                timeout=DEFAULT_HTTP_TIMEOUT,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            rate = data.get("feeRateBps")
+            if rate is not None:
+                return int(rate)
+        except Exception as e:
+            log.warning("fetch_fee_failed", condition_id=condition_id, error=str(e))
+        return None
+
     def start_heartbeat(self) -> None:
         self._running = True
         self._heartbeat_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
@@ -251,14 +315,20 @@ class ClobTrader:
         log.info("heartbeat_stopped")
 
     def _heartbeat_loop(self) -> None:
+        consecutive_errors = 0
         while self._running:
             try:
                 client = self._get_client()
                 resp = client.post_heartbeat(self._heartbeat_id)  # type: ignore[attr-defined]
                 if isinstance(resp, dict) and "heartbeat_id" in resp:
                     self._heartbeat_id = resp["heartbeat_id"]
+                    consecutive_errors = 0
             except Exception as e:
-                log.warning("heartbeat_error", error=str(e))
+                consecutive_errors += 1
+                log.warning("heartbeat_error", error=str(e), consecutive=consecutive_errors)
+                if consecutive_errors >= 3:
+                    self._heartbeat_id = self._recover_heartbeat_id()
+                    consecutive_errors = 0
             time.sleep(5)
 
     @property

@@ -27,7 +27,7 @@ from pm_bot.core.kelly import compute_kelly_for_recommendation
 from pm_bot.core.polymarket import fetch_weather_events
 from pm_bot.core.risk import RiskManager, RiskCheckResult
 from pm_bot.core.weather import fetch_forecast
-from pm_bot.core.observation import fetch_observed_high, filter_recommendations
+from pm_bot.core.observation import fetch_observation, filter_recommendations
 from pm_bot.models.config import DEFAULT_CITIES, STRATEGY_DEFAULTS, resolve_city_alias, CITY_COORDS
 from pm_bot.models.forecast import ConsensusForecast
 from pm_bot.models.market import Recommendation, ForecastResult
@@ -133,20 +133,20 @@ class TradingDaemon:
 
             forecasts: dict[str, ForecastResult] = {}
             consensus_forecasts: dict[str, Any] = {}
-            obs_highs: dict[str, Any] = {}
+            obs_map: dict[tuple[str, str], Any] = {}
             for ev in events:
-                fc = await fetch_forecast(client, ev.city, ev.date)
+                fc = await fetch_forecast(client, ev.city, ev.date, measure_type=ev.measure_type)
                 if fc:
                     forecasts[ev.city] = fc
                 cf = await fetch_all_sources(client, ev.city, ev.date, self.config, fc)
                 consensus_forecasts[ev.city] = cf
 
-            for city in {ev.city for ev in events}:
-                obs = await fetch_observed_high(client, city)
+            for city, mt in {(ev.city, ev.measure_type) for ev in events}:
+                obs = await fetch_observation(client, city, measure_type=mt)
                 if obs:
-                    obs_highs[city] = obs
-                    if obs.is_past_peak:
-                        log.info("observed_high_locked", city=city, high_c=obs.observed_high_c)
+                    obs_map[(city, mt)] = obs
+                    if obs.is_past_cutoff:
+                        log.info("observation_locked", city=city, measure_type=mt, observed_c=obs.observed_c)
 
             all_recs: list[Recommendation] = []
             for ev in events:
@@ -174,8 +174,8 @@ class TradingDaemon:
 
                     recs = strat.run(ev, **kwargs)
 
-                    if ev.city in obs_highs:
-                        recs = filter_recommendations(recs, obs_highs[ev.city])
+                    if (ev.city, ev.measure_type) in obs_map:
+                        recs = filter_recommendations(recs, obs_map[(ev.city, ev.measure_type)])
 
                     for rec in recs:
                         if rec.edge < 0.05:
