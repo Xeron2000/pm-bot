@@ -202,19 +202,25 @@ class BacktestEngine:
         return results
 
     async def run_real(self) -> list[BacktestResult]:
-        """Run backtest using real Polymarket resolved events + CLOB prices.
+        """Run backtest using real Polymarket resolved + active events + CLOB prices.
 
         Fetches resolved events via series_slug, enriches with CLOB T-24h
         prices, then runs strategies against actual market prices.
-        P&L is computed against the actual resolution.
+        Also fetches active (unsettled) events and uses Open-Meteo archive
+        actual temperatures to simulate settlement.
+        P&L is computed against the actual resolution (or simulated for active).
         """
         fetcher = RealDataFetcher()
         results: list[BacktestResult] = []
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             resolved_events = await fetcher.fetch_resolved_weather_events(client, days=self.days)
-            if not resolved_events:
-                log.warning("no_resolved_events_found", days=self.days)
+            active_events = await fetcher.fetch_active_weather_events(client, days=self.days)
+
+            all_events = resolved_events + active_events
+
+            if not all_events:
+                log.warning("no_events_found", days=self.days)
                 fetcher.close()
                 return []
 
@@ -222,27 +228,38 @@ class BacktestEngine:
                 from pm_bot.models.config import resolve_city_alias
 
                 allowed = {resolve_city_alias(c) for c in self.cities}
-                resolved_events = [ev for ev in resolved_events if ev.city in allowed]
+                all_events = [ev for ev in all_events if ev.city in allowed]
 
-            log.info("resolved_events_count", count=len(resolved_events))
+            log.info(
+                "events_count",
+                resolved=len(resolved_events),
+                active=len(active_events),
+                total=len(all_events),
+            )
 
-            if resolved_events and resolved_events[0].markets:
-                sample_m = resolved_events[0].markets[0]
+            if all_events and all_events[0].markets:
+                sample_m = all_events[0].markets[0]
                 if len(sample_m.token_id) > 20:
-                    await fetcher.enrich_events_with_clob_prices(client, resolved_events)
-                    # Fetch Dune prices for markets still missing CLOB data
+                    await fetcher.enrich_events_with_clob_prices(client, all_events)
                     from pm_bot.core.config_loader import load_config
 
                     config = load_config()
                     dune_key = config.get("dune", {}).get("api_key", "")
                     if dune_key:
-                        await fetcher.enrich_events_with_dune_prices(client, resolved_events, dune_key)
+                        await fetcher.enrich_events_with_dune_prices(client, all_events, dune_key)
+
+            # Fetch actual temps for active events (Open-Meteo archive API)
+            self._actual_temps: dict[str, float] = {}
+            if active_events:
+                actual_temps = await fetcher.fetch_actual_temps(client, active_events)
+                self._actual_temps = actual_temps
+                log.info("actual_temps_loaded", count=len(actual_temps))
 
             # Cache active Gamma prices for fallback
             active_prices = await fetcher.fetch_active_market_prices(client)
             self._active_price_cache = active_prices
 
-            unique_cities = list({ev.city for ev in resolved_events})
+            unique_cities = list({ev.city for ev in all_events})
             await fetcher.prefetch_forecasts(client, unique_cities, self.days)
 
             fill_count = 0
@@ -254,7 +271,7 @@ class BacktestEngine:
                 current_bankroll = self.bankroll
                 cumulative_pnl = 0.0
 
-                for ev in resolved_events:
+                for ev in all_events:
                     forecast = fetcher.get_cached_forecast(ev.city, ev.target_date)
                     if forecast is None:
                         log.debug("no_forecast_for_event", city=ev.city, date=ev.target_date)
@@ -415,8 +432,12 @@ class BacktestEngine:
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             resolved_events = await fetcher.fetch_resolved_weather_events(client, days=self.days)
-            if not resolved_events:
-                log.warning("no_resolved_events_found", days=self.days)
+            active_events = await fetcher.fetch_active_weather_events(client, days=self.days)
+
+            all_events = resolved_events + active_events
+
+            if not all_events:
+                log.warning("no_events_found", days=self.days)
                 fetcher.close()
                 return BacktestResult(
                     strategy_name="portfolio", bankroll=self.bankroll, final_value=self.bankroll, total_pnl=0.0
@@ -426,17 +447,22 @@ class BacktestEngine:
                 from pm_bot.models.config import resolve_city_alias
 
                 allowed = {resolve_city_alias(c) for c in self.cities}
-                resolved_events = [ev for ev in resolved_events if ev.city in allowed]
+                all_events = [ev for ev in all_events if ev.city in allowed]
 
-            if resolved_events and resolved_events[0].markets:
-                sample_m = resolved_events[0].markets[0]
+            if all_events and all_events[0].markets:
+                sample_m = all_events[0].markets[0]
                 if len(sample_m.token_id) > 20:
-                    await fetcher.enrich_events_with_clob_prices(client, resolved_events)
+                    await fetcher.enrich_events_with_clob_prices(client, all_events)
+
+            # Fetch actual temps for active events
+            if active_events:
+                actual_temps = await fetcher.fetch_actual_temps(client, active_events)
+                self._actual_temps = actual_temps
 
             active_prices = await fetcher.fetch_active_market_prices(client)
             self._active_price_cache = active_prices
 
-            unique_cities = list({ev.city for ev in resolved_events})
+            unique_cities = list({ev.city for ev in all_events})
             await fetcher.prefetch_forecasts(client, unique_cities, self.days)
 
             trades: list[SimulatedTrade] = []
@@ -446,7 +472,7 @@ class BacktestEngine:
             fill_count = 0
             skip_count = 0
 
-            for ev in resolved_events:
+            for ev in all_events:
                 forecast = fetcher.get_cached_forecast(ev.city, ev.target_date)
                 if forecast is None:
                     continue
@@ -716,14 +742,55 @@ class BacktestEngine:
         return self._active_price_cache.get(token_id)
 
     def _real_bucket_hit(self, ev: ResolvedEvent, bucket: TemperatureBucket) -> bool:
-        """Check if a bucket was the winning one in a resolved event."""
+        """Check if a bucket was the winning one in a resolved event.
+
+        For resolved events, uses the winning market flag.
+        For active events, uses actual temperature from Open-Meteo archive
+        to determine which bucket floor(observed_temp) falls into.
+        """
         for m in ev.markets:
             if m.token_id == bucket.market_id:
-                return m.winning
+                if m.winning:
+                    return True
+                if "-active" in ev.event_id:
+                    actual_key = f"{ev.city}|{ev.target_date}"
+                    temps: dict[str, float] = getattr(self, "_actual_temps", {})
+                    actual_temp = temps.get(actual_key)
+                    if actual_temp is not None:
+                        import math
+
+                        if bucket.temp_unit == "F":
+                            actual_f = actual_temp * 1.8 + 32
+                            floored: int = math.floor(actual_f)
+                            if bucket.temp_high_c > bucket.temp_low_c:
+                                low_f = bucket.temp_low_c * 1.8 + 32
+                                high_f = bucket.temp_high_c * 1.8 + 32
+                                return bool(low_f <= floored <= high_f)
+                            else:
+                                return bool(floored >= bucket.temp_low_c * 1.8 + 32)
+                        else:
+                            floored_i: int = math.floor(actual_temp)
+                            if bucket.temp_high_c > bucket.temp_low_c:
+                                return bool(bucket.temp_low_c <= floored_i < bucket.temp_high_c)
+                            else:
+                                return bool(floored_i >= bucket.temp_low_c)
+                return False
         return False
 
     def _get_resolved_temp(self, ev: ResolvedEvent) -> float | None:
-        """Extract resolved temperature from winning market title."""
+        """Extract resolved temperature from winning market title.
+
+        For resolved events, parses the winning market question.
+        For active events, uses actual temperature from Open-Meteo archive.
+        """
+        if "-active" in ev.event_id:
+            actual_key = f"{ev.city}|{ev.target_date}"
+            temps: dict[str, float] = getattr(self, "_actual_temps", {})
+            actual_temp = temps.get(actual_key)
+            if actual_temp is not None:
+                return float(actual_temp)
+            return None
+
         for m in ev.markets:
             if not m.winning:
                 continue

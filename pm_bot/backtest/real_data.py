@@ -1065,6 +1065,159 @@ class RealDataFetcher:
         conn.commit()
         return result
 
+    ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
+
+    async def fetch_active_weather_events(
+        self,
+        client: httpx.AsyncClient,
+        days: int = 30,
+    ) -> list[ResolvedEvent]:
+        """Fetch active (unsettled) weather events via series_slug endpoints.
+
+        Builds ResolvedEvent structures with winning=False (unsettled).
+        Gamma outcomePrices provide current market prices.
+        Combined with fetch_actual_temps() for settlement simulation.
+        """
+        conn = self._get_conn()
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).date()
+        today = datetime.now(timezone.utc).date()
+        events: list[ResolvedEvent] = []
+
+        for slug in WEATHER_SERIES_SLUGS:
+            city_name = SERIES_SLUG_TO_CITY.get(slug, "")
+            if not city_name:
+                continue
+
+            page = 0
+            while True:
+                data = await self._get_with_retry(
+                    client,
+                    f"{GAMMA_BASE}/events",
+                    params={
+                        "series_slug": slug,
+                        "limit": 100,
+                        "order": "end_date",
+                        "ascending": False,
+                        "offset": page * 100,
+                    },
+                )
+                if not data or not isinstance(data, list):
+                    break
+
+                for ev in data:
+                    if ev.get("closed", False):
+                        continue
+
+                    title = ev.get("title", "")
+                    ev_date = _parse_flexible_date("", title)
+                    if ev_date is None:
+                        raw_date = ev.get("endDate", "")
+                        if raw_date:
+                            ev_date = _parse_flexible_date(raw_date[:10], title)
+                    if ev_date is None:
+                        continue
+
+                    if ev_date > today:
+                        continue
+                    if ev_date < cutoff:
+                        break
+
+                    if not _is_high_temp_market(title):
+                        continue
+
+                    raw_markets = ev.get("markets", [])
+                    resolved_markets: list[ResolvedMarket] = []
+                    for m in raw_markets:
+                        rm = self._parse_resolved_market(m)
+                        if rm is not None:
+                            rm.winning = False
+                            resolved_markets.append(rm)
+
+                    if not resolved_markets:
+                        continue
+
+                    ev_id = f"{city_name}-{ev_date.isoformat()}-high-active"
+                    resolved = ResolvedEvent(
+                        event_id=ev_id,
+                        title=title,
+                        slug=ev.get("slug", ""),
+                        city=city_name,
+                        measure_type="high",
+                        target_date=ev_date.isoformat(),
+                        markets=resolved_markets,
+                    )
+                    events.append(resolved)
+
+                    try:
+                        conn.execute(
+                            "INSERT OR IGNORE INTO bt_resolved_events (event_id, title, city, target_date, measure_type, slug) VALUES (?, ?, ?, ?, ?, ?)",
+                            (ev_id, title, city_name, ev_date.isoformat(), "high", ev.get("slug", "")),
+                        )
+                    except sqlite3.Error:
+                        pass
+
+                if len(data) < 100:
+                    break
+                page += 1
+
+        conn.commit()
+        log.info("active_events_fetched", count=len(events), days=days)
+        return events
+
+    async def fetch_actual_temps(
+        self,
+        client: httpx.AsyncClient,
+        events: list[ResolvedEvent],
+    ) -> dict[str, float]:
+        """Fetch actual max temperatures from Open-Meteo archive API.
+
+        Returns {(city, date_iso): actual_max_temp_celsius}.
+        Used for simulating settlement of active (unsettled) markets.
+        """
+        from pm_bot.models.config import CITY_COORDS
+
+        city_dates: dict[str, set[str]] = {}
+        for ev in events:
+            city_dates.setdefault(ev.city, set()).add(ev.target_date)
+
+        result: dict[str, float] = {}
+
+        for city, dates in city_dates.items():
+            coords = CITY_COORDS.get(city)
+            if not coords:
+                continue
+
+            date_list = sorted(dates)
+            params = {
+                "latitude": coords[0],
+                "longitude": coords[1],
+                "start_date": date_list[0],
+                "end_date": date_list[-1],
+                "daily": "temperature_2m_max",
+                "timezone": "auto",
+            }
+
+            try:
+                data = await self._get_with_retry(client, self.ARCHIVE_URL, params=params)
+            except Exception:
+                log.warning("archive_api_error", city=city)
+                continue
+
+            if not data or "daily" not in data:
+                continue
+
+            daily = data["daily"]
+            times = daily.get("time", [])
+            temps = daily.get("temperature_2m_max", [])
+
+            for t, temp in zip(times, temps):
+                if temp is not None:
+                    key = f"{city}|{t}"
+                    result[key] = float(temp)
+
+        log.info("actual_temps_fetched", cities=len(city_dates), dates_with_temp=len(result))
+        return result
+
     def close(self) -> None:
         if self._conn:
             self._conn.close()

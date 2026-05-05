@@ -443,6 +443,8 @@ class TestBacktestEngineRunReal:
         with patch("pm_bot.backtest.engine.RealDataFetcher") as mock_fetcher_cls:
             mock_fetcher = MagicMock()
             mock_fetcher.fetch_resolved_weather_events = AsyncMock(return_value=[])
+            mock_fetcher.fetch_active_weather_events = AsyncMock(return_value=[])
+            mock_fetcher.fetch_actual_temps = AsyncMock(return_value={})
             mock_fetcher.close = MagicMock()
             mock_fetcher_cls.return_value = mock_fetcher
             result = await engine.run_real()
@@ -479,6 +481,8 @@ class TestBacktestEngineRunReal:
         with patch("pm_bot.backtest.engine.RealDataFetcher") as mock_fetcher_cls:
             mock_fetcher = MagicMock()
             mock_fetcher.fetch_resolved_weather_events = AsyncMock(return_value=[ev])
+            mock_fetcher.fetch_active_weather_events = AsyncMock(return_value=[])
+            mock_fetcher.fetch_actual_temps = AsyncMock(return_value={})
             mock_fetcher.enrich_events_with_clob_prices = AsyncMock()
             mock_fetcher.enrich_events_with_dune_prices = AsyncMock()
             mock_fetcher.fetch_active_market_prices = AsyncMock(return_value={})
@@ -521,6 +525,8 @@ class TestBacktestEngineRunReal:
         with patch("pm_bot.backtest.engine.RealDataFetcher") as mock_fetcher_cls:
             mock_fetcher = MagicMock()
             mock_fetcher.fetch_resolved_weather_events = AsyncMock(return_value=[ev])
+            mock_fetcher.fetch_active_weather_events = AsyncMock(return_value=[])
+            mock_fetcher.fetch_actual_temps = AsyncMock(return_value={})
             mock_fetcher.enrich_events_with_clob_prices = AsyncMock()
             mock_fetcher.enrich_events_with_dune_prices = AsyncMock()
             mock_fetcher.fetch_active_market_prices = AsyncMock(return_value={})
@@ -542,6 +548,8 @@ class TestBacktestEngineRunReal:
         with patch("pm_bot.backtest.engine.RealDataFetcher") as mock_fetcher_cls:
             mock_fetcher = MagicMock()
             mock_fetcher.fetch_resolved_weather_events = AsyncMock(return_value=[])
+            mock_fetcher.fetch_active_weather_events = AsyncMock(return_value=[])
+            mock_fetcher.fetch_actual_temps = AsyncMock(return_value={})
             mock_fetcher.close = MagicMock()
             mock_fetcher_cls.return_value = mock_fetcher
             result = await engine.run_real()
@@ -579,6 +587,8 @@ class TestBacktestEngineRunReal:
         with patch("pm_bot.backtest.engine.RealDataFetcher") as mock_fetcher_cls:
             mock_fetcher = MagicMock()
             mock_fetcher.fetch_resolved_weather_events = AsyncMock(return_value=[ev])
+            mock_fetcher.fetch_active_weather_events = AsyncMock(return_value=[])
+            mock_fetcher.fetch_actual_temps = AsyncMock(return_value={})
             mock_fetcher.enrich_events_with_clob_prices = AsyncMock()
             mock_fetcher.enrich_events_with_dune_prices = AsyncMock()
             mock_fetcher.fetch_active_market_prices = AsyncMock(return_value={})
@@ -792,6 +802,8 @@ class TestBacktestEngineForecastPenalty:
         with patch("pm_bot.backtest.engine.RealDataFetcher") as mock_fetcher_cls:
             mock_fetcher = MagicMock()
             mock_fetcher.fetch_resolved_weather_events = AsyncMock(return_value=[ev])
+            mock_fetcher.fetch_active_weather_events = AsyncMock(return_value=[])
+            mock_fetcher.fetch_actual_temps = AsyncMock(return_value={})
             mock_fetcher.enrich_events_with_clob_prices = AsyncMock()
             mock_fetcher.enrich_events_with_dune_prices = AsyncMock()
             mock_fetcher.fetch_active_market_prices = AsyncMock(return_value={})
