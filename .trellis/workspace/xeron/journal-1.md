@@ -375,3 +375,37 @@ Fixed 3 critical bugs (low-temp forecast hardcoded temperature_2m_max → 0.0°C
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: Remove low-temp markets + active market backtest
+
+**Date**: 2026-05-05
+**Task**: Remove low-temp markets + active market backtest
+**Branch**: `main`
+
+### Summary
+
+Deleted all measure_type=low support (forecast, observation, event filtering) to focus on daily high-temp only. Added fetch_active_weather_events() and fetch_actual_temps() (Open-Meteo archive API) to include unsettled markets in backtest. Fixed 30-day 0-trades: 6 strategies now +0%~+82% in 30d, +278%~+425% in 90d. 977 tests pass.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ca4a037` | (see git log) |
+| `a620165` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
