@@ -11,12 +11,13 @@ log = structlog.get_logger()
 class NegRiskSumStrategy(Strategy):
     name = "neg_risk_sum"
 
-    TAKER_FEE_RATE_BPS = 100
+    TAKER_FEE_RATE_BPS = 50
+    TAKER_FEE_EXPONENT = 0.5
     TAKER_FEE_MAX = 0.0125
 
     def _taker_fee(self, price: float) -> float:
         from pm_bot.core.clob import compute_v2_taker_fee
-        return min(compute_v2_taker_fee(self.TAKER_FEE_RATE_BPS, price), self.TAKER_FEE_MAX)
+        return min(compute_v2_taker_fee(self.TAKER_FEE_RATE_BPS, price, self.TAKER_FEE_EXPONENT), self.TAKER_FEE_MAX)
 
     def run(self, event: WeatherEvent, **kwargs) -> list[Recommendation]:
         defaults = self.get_defaults()
@@ -98,7 +99,7 @@ class NegRiskSumStrategy(Strategy):
         result: list[tuple[TemperatureBucket, float]] = []
         for b in buckets:
             if b.yes_price > 0:
-                model_prob = bucket_probability_numpy(forecast, b.temp_low_c, b.temp_high_c)
+                model_prob = bucket_probability_numpy(forecast, b.temp_low_c, b.temp_high_c, b.temp_unit)
                 if b.yes_price > model_prob + 0.01:
                     result.append((b, model_prob))
         result.sort(key=lambda x: x[0].yes_price - x[1], reverse=True)

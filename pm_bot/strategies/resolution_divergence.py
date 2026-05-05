@@ -93,7 +93,7 @@ class ResolutionDivergenceStrategy(Strategy):
         for i, b in enumerate(buckets):
             low = b.temp_low_c
             high = b.temp_high_c
-            probs[i] = bucket_probability_numpy(forecast, low, high)
+            probs[i] = bucket_probability_numpy(forecast, low, high, b.temp_unit)
         return probs
 
     def _compute_nws_probs(
@@ -123,5 +123,5 @@ class ResolutionDivergenceStrategy(Strategy):
         for i, b in enumerate(buckets):
             low = b.temp_low_c
             high = b.temp_high_c
-            probs[i] = bucket_probability_numpy(nws_forecast, low, high)
+            probs[i] = bucket_probability_numpy(nws_forecast, low, high, b.temp_unit)
         return probs

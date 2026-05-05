@@ -26,7 +26,7 @@ class TruncationEdgeStrategy(Strategy):
             if b.yes_price <= 0.01 or b.yes_price >= 0.99:
                 continue
 
-            model_prob = bucket_probability_numpy(forecast, b.temp_low_c, b.temp_high_c)
+            model_prob = bucket_probability_numpy(forecast, b.temp_low_c, b.temp_high_c, b.temp_unit)
 
             if model_prob <= 0:
                 continue

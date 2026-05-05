@@ -18,8 +18,9 @@ MAX_425_RETRIES = 3
 HEARTBEAT_RECOVERY_ATTEMPTS = 3
 
 
-def compute_v2_taker_fee(fee_rate_bps: int, price: float) -> float:
-    return (fee_rate_bps / 10000.0) * price * (1.0 - price)
+def compute_v2_taker_fee(fee_rate_bps: int, price: float, exponent: float = 1.0) -> float:
+    base = fee_rate_bps / 10000.0
+    return base * price * (price * (1.0 - price)) ** (exponent - 1.0) if exponent != 1.0 else base * price * (1.0 - price)
 
 
 T = TypeVar("T")

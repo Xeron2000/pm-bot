@@ -4,14 +4,15 @@ from pm_bot.core.clob import compute_v2_taker_fee
 
 
 class CostModel:
-    taker_fee_rate_bps: int = 100
+    taker_fee_rate_bps: int = 50
+    taker_fee_exponent: float = 0.5
     maker_fee_rate: float = 0.00
     default_spread_pct: float = 0.02
     default_slippage_pct: float = 0.01
     stop_loss_slippage_pct: float = 0.03
 
     def _taker_fee_rate(self, price: float) -> float:
-        return min(compute_v2_taker_fee(self.taker_fee_rate_bps, price), 0.0125)
+        return min(compute_v2_taker_fee(self.taker_fee_rate_bps, price, self.taker_fee_exponent), 0.0125)
 
     def calculate_cost(self, side: str, price: float, amount_usd: float) -> float:
         wager = price * amount_usd

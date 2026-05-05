@@ -32,6 +32,13 @@ CLOB_PRICES_URL = "https://clob.polymarket.com/prices-history"
 
 _DEFAULT_STD_C = 2.5
 
+_CITY_STD_C: dict[str, float] = {
+    "New York": 2.5, "London": 2.0, "Denver": 3.5, "Helsinki": 3.5,
+    "Paris": 2.5, "Tokyo": 2.0, "Chicago": 3.0, "Austin": 2.0,
+    "Seoul": 2.5, "Hong Kong": 1.0, "Warsaw": 2.5, "Lagos": 1.0,
+    "Taipei": 1.5, "Miami": 1.5,
+}
+
 _MIN_REQUEST_INTERVAL = 0.12
 _MAX_RETRIES = 3
 _RETRY_BACKOFF_BASE = 1.0
@@ -164,15 +171,12 @@ def _is_weather_title(title: str) -> bool:
     ])
 
 
-def _synthesize_ensemble(center: float, std: float = _DEFAULT_STD_C, n: int = 51) -> list[float]:
-    """Generate synthetic ensemble members when real members are unavailable.
-
-    Uses a Gaussian distribution around the deterministic forecast value.
-    GFS 24h temperature forecast std ≈ 2.0-3.0°C depending on lead time
-    and season; 2.5°C is a reasonable middle ground.
-    """
+def _synthesize_ensemble(center: float, city: str = "", n: int = 51) -> list[float]:
+    std = _CITY_STD_C.get(city, _DEFAULT_STD_C)
+    import hashlib
+    seed = int(hashlib.md5(f"{center}:{city}".encode()).hexdigest()[:8], 16)
     import random
-    rng = random.Random(hash(str(center)))
+    rng = random.Random(seed)
     return [center + rng.gauss(0, std) for _ in range(n)]
 
 
@@ -488,13 +492,16 @@ class RealDataFetcher:
                     return
                 raw_date = ev.target_date
                 try:
-                    dt = datetime.strptime(raw_date, "%Y-%m-%d").replace(
-                        tzinfo=timezone.utc,
-                        hour=12,
-                    )
+                    dt = datetime.strptime(raw_date, "%Y-%m-%d")
                 except ValueError:
                     return
-                target_ts = dt.timestamp() - (hours_before_settlement * 3600)
+                from pm_bot.core.observation import CITY_TZ
+                from zoneinfo import ZoneInfo
+                tz_name = CITY_TZ.get(ev.city, "UTC")
+                tz = ZoneInfo(tz_name)
+                local_midnight = dt.replace(tzinfo=tz)
+                settlement_utc = local_midnight.timestamp()
+                target_ts = settlement_utc - (hours_before_settlement * 3600)
 
                 cached = self._get_cached_clob_price(m.token_id, target_ts)
                 if cached is not None:
@@ -752,7 +759,7 @@ class RealDataFetcher:
                             members.append(float(m_data[i]))
 
                     if not members:
-                        members = _synthesize_ensemble(float(temps[i]))
+                        members = _synthesize_ensemble(float(temps[i]), city=canonical)
 
                     fr = ForecastResult(
                         city=canonical, date=t, model=model,

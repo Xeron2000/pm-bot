@@ -34,7 +34,7 @@ class EnsembleSpreadStrategy(Strategy):
             if b.yes_price <= 0.01 or b.yes_price >= 0.99:
                 continue
 
-            model_prob = bucket_probability_numpy(forecast, b.temp_low_c, b.temp_high_c)
+            model_prob = bucket_probability_numpy(forecast, b.temp_low_c, b.temp_high_c, b.temp_unit)
 
             yes_edge = model_prob - b.yes_price
             no_edge = (1.0 - model_prob) - b.no_price

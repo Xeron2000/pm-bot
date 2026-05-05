@@ -317,12 +317,12 @@ class BacktestEngine:
         for m in ev.markets:
             bucket = parse_bucket(m.question, m.token_id, yes_price=0.0, no_price=1.0, volume=0.0)
             if bucket is not None:
-                if m.yes_price > 0.01 and m.yes_price < 0.99:
+                if m.yes_price > 0.005 and m.yes_price < 0.995:
                     bucket.yes_price = m.yes_price
                     bucket.no_price = m.no_price
                     clob_count += 1
                 else:
-                    prob = bucket_probability_numpy(forecast, bucket.temp_low_c, bucket.temp_high_c)
+                    prob = bucket_probability_numpy(forecast, bucket.temp_low_c, bucket.temp_high_c, bucket.temp_unit)
                     bucket.yes_price = prob
                     bucket.no_price = 1.0 - prob
                     forecast_count += 1
@@ -371,7 +371,7 @@ class BacktestEngine:
             low = mean + (i * 2.0) - 1.0
             high = mean + (i * 2.0) + 1.0
             from pm_bot.core.weather import bucket_probability_numpy
-            prob = bucket_probability_numpy(forecast, low, high)
+            prob = bucket_probability_numpy(forecast, low, high, "C")
             buckets.append(TemperatureBucket(
                 market_id=f"synth_{city}_{date}_{i}",
                 question=f"Temp {low:.0f}-{high:.0f}°C",

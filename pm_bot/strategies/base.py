@@ -30,7 +30,7 @@ class Gopfan2Strategy(Strategy):
             if b.yes_price <= 0 or b.no_price <= 0:
                 continue
 
-            model_prob = bucket_probability_numpy(forecast, b.temp_low_c, b.temp_high_c) if forecast else None
+            model_prob = bucket_probability_numpy(forecast, b.temp_low_c, b.temp_high_c, b.temp_unit) if forecast else None
 
             if b.yes_price <= yes_max:
                 if model_prob is not None and model_prob > b.yes_price + 0.05:
