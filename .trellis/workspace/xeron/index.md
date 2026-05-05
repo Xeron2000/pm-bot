@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 6
+- **Total Sessions**: 7
 - **Last Active**: 2026-05-05
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~210 | Active |
+| `journal-1.md` | ~243 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 7 | 2026-05-05 | Deep backtest audit: 8 bugs found and fixed | `a458d95` | `main` |
 | 6 | 2026-05-05 | Pitfall fixes: V2 fees, low-temp cutoff, CLOB robustness | `91f3140` | `main` |
 | 5 | 2026-05-05 | Weather market pitfalls research + Paris ICAO fix | `b43fdba` | `main` |
 | 4 | 2026-05-05 | Intraday METAR observation filtering + strategy research/prune | `a515cd3`, `ed04d5a` | `main` |

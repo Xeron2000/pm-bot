@@ -208,3 +208,36 @@ Fixed 6 pitfall categories from weather-pitfalls research: (1) V2 dynamic taker 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: Deep backtest audit: 8 bugs found and fixed
+
+**Date**: 2026-05-05
+**Task**: Deep backtest audit: 8 bugs found and fixed
+**Branch**: `main`
+
+### Summary
+
+Exhaustive web research + code audit found 8 bugs affecting backtest accuracy. CRITICAL: taker fee RateBps=100→50 + exponent 0.5 (was 2x overpriced), CLOB T-24h timezone fix (UTC→local midnight), bucket upper bound <=→< for floor semantics, °F truncation in °C space (new temp_unit param), ensemble city-specific std, CLOB price filter 0.01→0.005, continuous approx +1.0 removal, neg_risk_sum fee consistency. All fixes ruff+mypy clean.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a458d95` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
