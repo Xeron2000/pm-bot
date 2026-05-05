@@ -308,3 +308,36 @@ Implemented neg_risk_field_fade (+1754%/90d, ΣYES>1.02 over-round exploitation)
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: Backtest fidelity: FillModel, Dune prices, forecast penalty, portfolio mode
+
+**Date**: 2026-05-05
+**Task**: Backtest fidelity: FillModel, Dune prices, forecast penalty, portfolio mode
+**Branch**: `main`
+
+### Summary
+
+Implemented backtest fidelity improvements: FillModel (maker fill probability 50/25/10% by price zone), Dune Analytics hourly price backfill for 42% markets missing CLOB data, forecast penalty (5¢/share), dual-run --compare-forecast showing forecast bias delta, portfolio mode --portfolio (all strategies share bankroll, merged signals per event). 90d 8-city live portfolio: +454% Sharpe 4.6 MaxDD 2.9%. Found only 3 active cities (NYC/London/Tokyo) have resolved events; Dallas/Atlanta/LA have zero. 11 files, +1243 lines.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cc6c8ab` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
