@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 13
+- **Total Sessions**: 14
 - **Last Active**: 2026-05-06
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~444 | Active |
+| `journal-1.md` | ~481 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 14 | 2026-05-06 | Dry-run paper trading daemon, AWS deployment | `9011d50`, `2055ae1`, `03f62bc`, `0b98936`, `ec6bacd` | `main` |
 | 13 | 2026-05-06 | ERA5 bias fix + ensemble calibration + exhaustive grid search | `c3599b4` | `main` |
 | 12 | 2026-05-05 | Remove low-temp markets + active market backtest | `ca4a037`, `a620165` | `main` |
 | 11 | 2026-05-05 | Remove low-temp markets + bug fixes | `057d3e9`, `ca4a037` | `main` |

@@ -442,3 +442,40 @@ Fixed 3 backtest fidelity issues: ERA5 Tmax cold bias correction (+0.5~1.2°C pe
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: Dry-run paper trading daemon, AWS deployment
+
+**Date**: 2026-05-06
+**Task**: Dry-run paper trading daemon, AWS deployment
+**Branch**: `main`
+
+### Summary
+
+Added dry-run mode with PaperTradeDB (00 bankroll, Kelly=0.15, SL=20%), RiskDB protocol for risk manager, paper-pnl CLI command. Deployed to AWS as systemd service with optimal strategy config (gopfan2+neg_risk_sum+ensemble_spread, 8 cities). Fixed bankroll-scaled position limits (max_single=15% bankroll). Confirmed .trellis/ safe to push (no secrets).
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9011d50` | (see git log) |
+| `2055ae1` | (see git log) |
+| `03f62bc` | (see git log) |
+| `0b98936` | (see git log) |
+| `ec6bacd` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
