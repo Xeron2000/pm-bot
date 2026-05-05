@@ -750,7 +750,7 @@ class BacktestEngine:
             slug=ev.slug,
             city=ev.city,
             date=ev.target_date,
-            measure_type="high",
+            measure_type=ev.measure_type,
             buckets=buckets,
         ), price_sources
 
@@ -758,7 +758,7 @@ class BacktestEngine:
         """Get cached active Gamma price for a token. Returns None if not cached."""
         if not hasattr(self, "_active_price_cache"):
             return None
-        return self._active_price_cache.get(token_id)
+        return float(self._active_price_cache[token_id]) if token_id in self._active_price_cache else None
 
     def _real_bucket_hit(self, ev: ResolvedEvent, bucket: TemperatureBucket) -> bool:
         """Check if a bucket was the winning one in a resolved event.

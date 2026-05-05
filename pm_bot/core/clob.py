@@ -180,6 +180,7 @@ class ClobTrader:
 
         try:
             response = _retry_on_425(_place)
+            self._daily_spent += amount_usd
             log.info("order_placed", token_id=token_id, side="SELL", price=price, size=size)
             return response  # type: ignore[no-any-return]
         except Exception as e:

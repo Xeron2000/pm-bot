@@ -82,7 +82,7 @@ async def run_watch(
                         kwargs: dict = {}
                         for k, v in STRATEGY_DEFAULTS.get(strat_name, {}).items():
                             kwargs[k] = edge_override if k in ("edge_min",) and edge_override else v
-                        if strat_name in ("truncation_edge", "ensemble_spread") and ev.city in forecasts:
+                        if ev.city in forecasts:
                             kwargs["forecast"] = forecasts[ev.city]
                         if strat_name == "ensemble_spread":
                             kwargs["config"] = config

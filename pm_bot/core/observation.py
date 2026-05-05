@@ -5,10 +5,13 @@ import re
 import structlog
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
 import httpx
+
+if TYPE_CHECKING:
+    from pm_bot.models.market import Recommendation
 
 log = structlog.get_logger()
 
@@ -203,31 +206,31 @@ def should_filter_bucket(
 
 
 def filter_recommendations(
-    recs: list,
+    recs: list[Recommendation],
     obs: ObservedTemp | None,
-) -> list:
+) -> list[Recommendation]:
     if not obs or not obs.is_past_cutoff:
         return recs
 
     filtered = []
     for r in recs:
-        if r.direction == "YES" and should_filter_bucket(r.bucket.temp_low, obs):
+        if r.direction == "YES" and should_filter_bucket(r.bucket.temp_low_c, obs):
             log.debug(
                 "filtering_impossible_yes",
                 strategy=r.strategy,
                 city=r.city,
-                bucket_low_c=r.bucket.temp_low,
+                bucket_low_c=r.bucket.temp_low_c,
                 observed_c=obs.observed_c,
             )
             continue
-        if r.direction == "NO" and not should_filter_bucket(r.bucket.temp_low, obs):
+        if r.direction == "NO" and not should_filter_bucket(r.bucket.temp_low_c, obs):
             floor_obs = math.floor(obs.observed_c)
-            if r.bucket.temp_low == floor_obs:
+            if r.bucket.temp_low_c == floor_obs:
                 log.debug(
                     "filtering_confirmed_no",
                     strategy=r.strategy,
                     city=r.city,
-                    bucket_low_c=r.bucket.temp_low,
+                    bucket_low_c=r.bucket.temp_low_c,
                     floor_obs=floor_obs,
                 )
                 continue
