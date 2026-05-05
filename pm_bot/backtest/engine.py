@@ -397,4 +397,10 @@ class BacktestEngine:
             return obs_c <= bucket.temp_high_c
         if bucket.is_high_tail:
             return obs_c >= bucket.temp_low_c
-        return bucket.temp_low_c <= obs_c <= bucket.temp_high_c
+        if bucket.temp_unit == "F":
+            obs_f = obs_c * 1.8 + 32.0
+            low_f = bucket.temp_low_c * 1.8 + 32.0
+            high_f = bucket.temp_high_c * 1.8 + 32.0
+            return low_f <= obs_f <= high_f
+        from math import floor
+        return floor(obs_c) == bucket.temp_low_c

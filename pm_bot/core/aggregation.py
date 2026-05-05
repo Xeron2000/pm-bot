@@ -17,11 +17,14 @@ def _norm_cdf(x: float) -> float:
     return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
 
 
-def bucket_probability_normal(mean: float, std: float, low: float, high: float) -> float:
+def bucket_probability_normal(mean: float, std: float, low: float, high: float, temp_unit: str = "C") -> float:
     if std <= 0:
         std = 0.5
     z_low = (low - mean) / std
-    z_high = (high - mean) / std
+    if temp_unit == "F":
+        z_high = (high + 1.0 / 1.8 - mean) / std
+    else:
+        z_high = (low + 1.0 - mean) / std
     return max(0.0, min(1.0, _norm_cdf(z_high) - _norm_cdf(z_low)))
 
 
@@ -37,6 +40,7 @@ def compute_consensus_probability(
     sources: list[SourceForecast],
     temp_low_c: float,
     temp_high_c: float,
+    temp_unit: str = "C",
 ) -> float:
     if not sources:
         return 0.5
@@ -44,7 +48,7 @@ def compute_consensus_probability(
     total_prob = 0.0
     for s, w in zip(sources, weights):
         std = max(s.std, 0.5)
-        p = bucket_probability_normal(s.mean, std, temp_low_c, temp_high_c)
+        p = bucket_probability_normal(s.mean, std, temp_low_c, temp_high_c, temp_unit)
         total_prob += w * p
     return max(0.0, min(1.0, total_prob))
 
@@ -144,11 +148,12 @@ def consensus_bucket_probability(
     consensus: ConsensusForecast,
     temp_low_c: float,
     temp_high_c: float,
+    temp_unit: str = "C",
 ) -> float:
     sources = list(consensus.sources.values())
     if not sources:
         return 0.5
-    prob = compute_consensus_probability(sources, temp_low_c, temp_high_c)
+    prob = compute_consensus_probability(sources, temp_low_c, temp_high_c, temp_unit)
     # PRD 3B: 3+ source agreement → edge confidence ×1.5~2.0
     n_sources = len(sources)
     if n_sources >= 3 and consensus.agreement_score >= 0.8:

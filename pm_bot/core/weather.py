@@ -102,15 +102,22 @@ def bucket_probability_numpy(
         if temp_unit == "F":
             arr_f = arr * 1.8 + 32.0
             truncated_f = np.floor(arr_f)
-            truncated = (truncated_f - 32.0) / 1.8
+            bucket_low_f = temp_low_c * 1.8 + 32.0
+            bucket_high_f = temp_high_c * 1.8 + 32.0
+            if temp_high_c >= _TAIL_BOUND:
+                count = float(np.sum(truncated_f >= bucket_low_f))
+            elif temp_low_c <= -_TAIL_BOUND:
+                count = float(np.sum(truncated_f <= bucket_high_f))
+            else:
+                count = float(np.sum((truncated_f >= bucket_low_f) & (truncated_f <= bucket_high_f)))
         else:
             truncated = np.floor(arr)
-        if temp_high_c >= _TAIL_BOUND:
-            count = float(np.sum(truncated >= temp_low_c))
-        elif temp_low_c <= -_TAIL_BOUND:
-            count = float(np.sum(truncated <= temp_high_c))
-        else:
-            count = float(np.sum((truncated >= temp_low_c) & (truncated < temp_high_c)))
+            if temp_high_c >= _TAIL_BOUND:
+                count = float(np.sum(truncated >= temp_low_c))
+            elif temp_low_c <= -_TAIL_BOUND:
+                count = float(np.sum(truncated <= temp_high_c))
+            else:
+                count = float(np.sum(truncated == temp_low_c))
         return count / len(forecast.members)
 
     mean = forecast.temp_high_c
@@ -122,8 +129,12 @@ def bucket_probability_numpy(
     elif temp_low_c <= -_TAIL_BOUND:
         z = (temp_high_c - mean) / std
         p = 0.5 * (1.0 + erf(z / sqrt(2)))
+    elif temp_unit == "F":
+        z_low = (temp_low_c - mean) / std
+        z_high = (temp_high_c + 1.0 / 1.8 - mean) / std
+        p = 0.5 * (erf(z_high / sqrt(2)) - erf(z_low / sqrt(2)))
     else:
         z_low = (temp_low_c - mean) / std
-        z_high = (temp_high_c - mean) / std
+        z_high = (temp_low_c + 1.0 - mean) / std
         p = 0.5 * (erf(z_high / sqrt(2)) - erf(z_low / sqrt(2)))
     return max(0.0, min(1.0, p))

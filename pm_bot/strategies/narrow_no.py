@@ -42,4 +42,6 @@ class NarrowNoStrategy(Strategy):
     def _bucket_width_c(self, b: TemperatureBucket) -> float | None:
         if b.is_low_tail or b.is_high_tail:
             return None
-        return b.temp_high_c - b.temp_low_c
+        if b.temp_unit == "F":
+            return (b.temp_high - b.temp_low + 1) / 1.8
+        return 1.0
