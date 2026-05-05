@@ -1,13 +1,11 @@
 from __future__ import annotations
 
-import sqlite3
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
-import pytest
 
-from pm_bot.core.db import TradeDB, _utc_now, _utc_today, SCHEMA_V1
+from pm_bot.core.db import TradeDB, _utc_now, _utc_today
 
 
 class TestTradeDBInit:

@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
 
 from pm_bot.core.clob import (
     ClobTrader,
-    compute_v2_taker_fee,
     _retry_on_425,
     CLOB_HOST,
     CHAIN_ID,

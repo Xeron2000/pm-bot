@@ -131,7 +131,7 @@ def _parse_event(ev: dict) -> WeatherEvent | None:
         slug=ev.get("slug", ""),
         city=city,
         date=date,
-        measure_type=_detect_measure_type(title),
+        measure_type="high",
         airport_code=airport,
         buckets=buckets,
     )
@@ -209,13 +209,6 @@ def _extract_city_date(title: str) -> tuple[str | None, str]:
         date = date_match.group(1) if date_match else ""
 
     return city, date
-
-
-def _detect_measure_type(title: str) -> str:
-    tl = title.lower()
-    if "lowest" in tl or "low temperature" in tl or "low temp" in tl:
-        return "low"
-    return "high"
 
 
 def _extract_airport(description: str) -> str | None:

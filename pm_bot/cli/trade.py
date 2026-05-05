@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import httpx
 import structlog
 from rich.console import Console
@@ -89,18 +91,15 @@ async def run_trade(
                 all_recs.extend(recs)
 
         if observed:
-            from typing import Any
-
-            obs_map: dict[tuple[str, str], Any] = {}
-            for city, mt in {(ev.city, ev.measure_type) for ev in events}:
-                obs = await fetch_observation(client, city, measure_type=mt)
+            obs_map: dict[str, Any] = {}
+            for city in {ev.city for ev in events}:
+                obs = await fetch_observation(client, city)
                 if obs:
-                    obs_map[(city, mt)] = obs
+                    obs_map[city] = obs
             filtered = []
             for r in all_recs:
-                key = (r.city, r.event.measure_type)
-                if key in obs_map:
-                    remaining = filter_recommendations([r], obs_map[key])
+                if r.city in obs_map:
+                    remaining = filter_recommendations([r], obs_map[r.city])
                     filtered.extend(remaining)
                 else:
                     filtered.append(r)
@@ -187,7 +186,7 @@ async def fetch_forecast_at(
     model: str = "gfs_seamless",
 ) -> ForecastResult | None:
     from pm_bot.models.market import ForecastResult
-    from pm_bot.core.weather import OPEN_METEO_BASE, _MEMBER_KEYS_MAX
+    from pm_bot.core.weather import OPEN_METEO_BASE, _MEMBER_KEYS
 
     params: dict[str, str | int | float] = {
         "latitude": lat,
@@ -218,7 +217,7 @@ async def fetch_forecast_at(
         resp.raise_for_status()
         ens_data = resp.json()
         ens_daily = ens_data.get("daily", {})
-        for mk in _MEMBER_KEYS_MAX:
+        for mk in _MEMBER_KEYS:
             member_data = ens_daily.get(mk, [])
             if member_data:
                 v = member_data[0]

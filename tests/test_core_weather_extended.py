@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-import json
-from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
@@ -97,24 +95,6 @@ class TestFetchForecast:
         assert result.temp_high_c == 25.0
 
     @pytest.mark.asyncio
-    async def test_low_measure_type(self, _clear_cache):
-        client = AsyncMock()
-        main_resp = MagicMock()
-        main_resp.json.return_value = {
-            "daily": {"temperature_2m_max": [25.0], "temperature_2m_min": [10.0]}
-        }
-        main_resp.raise_for_status = MagicMock()
-
-        ens_resp = MagicMock()
-        ens_resp.json.return_value = {"daily": {}}
-        ens_resp.raise_for_status = MagicMock()
-
-        client.get = AsyncMock(side_effect=[main_resp, ens_resp])
-        result = await fetch_forecast(client, "New York", measure_type="low")
-        assert result is not None
-        assert result.measure_type == "low"
-
-    @pytest.mark.asyncio
     async def test_result_cached(self, _clear_cache):
         from pm_bot.core.weather import _forecast_cache
         client = AsyncMock()
@@ -129,7 +109,7 @@ class TestFetchForecast:
         ens_resp.raise_for_status = MagicMock()
 
         client.get = AsyncMock(side_effect=[main_resp, ens_resp])
-        result = await fetch_forecast(client, "New York")
+        await fetch_forecast(client, "New York")
         assert "New York:gfs_seamless:high" in _forecast_cache
 
     @pytest.mark.asyncio

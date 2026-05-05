@@ -3,7 +3,6 @@ from __future__ import annotations
 from pm_bot.models.forecast import SourceForecast, ConsensusForecast
 from pm_bot.models.config import (
     CITY_COORDS,
-    CITY_ALIASES,
     resolve_city_alias,
     STRATEGY_DEFAULTS,
     CACHE_TTL,

@@ -122,7 +122,6 @@ class BacktestEngine:
                                 obs_time_utc=datetime.now(timezone.utc),
                                 local_time=datetime.now(timezone.utc),
                                 is_past_cutoff=True,
-                                measure_type=forecast.measure_type,
                             )
                             kwargs["observation"] = obs_obj
 
@@ -256,7 +255,7 @@ class BacktestEngine:
                 cumulative_pnl = 0.0
 
                 for ev in resolved_events:
-                    forecast = fetcher.get_cached_forecast(ev.city, ev.target_date, ev.measure_type)
+                    forecast = fetcher.get_cached_forecast(ev.city, ev.target_date)
                     if forecast is None:
                         log.debug("no_forecast_for_event", city=ev.city, date=ev.target_date)
                         continue
@@ -277,7 +276,6 @@ class BacktestEngine:
                             obs_time_utc=datetime.now(timezone.utc),
                             local_time=datetime.now(timezone.utc),
                             is_past_cutoff=True,
-                            measure_type=forecast.measure_type,
                         )
                         kwargs["observation"] = obs_obj
 
@@ -449,7 +447,7 @@ class BacktestEngine:
             skip_count = 0
 
             for ev in resolved_events:
-                forecast = fetcher.get_cached_forecast(ev.city, ev.target_date, ev.measure_type)
+                forecast = fetcher.get_cached_forecast(ev.city, ev.target_date)
                 if forecast is None:
                     continue
 
@@ -468,7 +466,6 @@ class BacktestEngine:
                         obs_time_utc=datetime.now(timezone.utc),
                         local_time=datetime.now(timezone.utc),
                         is_past_cutoff=True,
-                        measure_type=forecast.measure_type,
                     )
                     kwargs["observation"] = obs_obj
 
@@ -708,7 +705,7 @@ class BacktestEngine:
             slug=ev.slug,
             city=ev.city,
             date=ev.target_date,
-            measure_type=ev.measure_type,
+            measure_type="high",
             buckets=buckets,
         ), price_sources
 

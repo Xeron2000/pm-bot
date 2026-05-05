@@ -47,8 +47,7 @@ CITY_TZ: dict[str, str] = {
 }
 
 AWC_URL = "https://aviationweather.gov/api/data/metar"
-HIGH_CUTOFF_HOUR = 17
-LOW_CUTOFF_HOUR = 7
+CUTOFF_HOUR = 17
 SPIKE_THRESHOLD_C = 3.0
 
 
@@ -59,7 +58,6 @@ class ObservedTemp:
     obs_time_utc: datetime
     local_time: datetime
     is_past_cutoff: bool
-    measure_type: str
     anomaly_detected: bool = False
 
 
@@ -107,7 +105,6 @@ async def fetch_previous_metar(
 async def fetch_observation(
     client: httpx.AsyncClient,
     city: str,
-    measure_type: str = "high",
 ) -> ObservedTemp | None:
     icao = CITY_ICAO.get(city)
     if not icao:
@@ -137,8 +134,7 @@ async def fetch_observation(
     except (ValueError, AttributeError):
         obs_time_utc = datetime.now(timezone.utc)
 
-    cutoff_hour = LOW_CUTOFF_HOUR if measure_type == "low" else HIGH_CUTOFF_HOUR
-    is_past_cutoff = now_local.hour >= cutoff_hour
+    is_past_cutoff = now_local.hour >= CUTOFF_HOUR
 
     anomaly = False
     prev = await fetch_previous_metar(client, icao)
@@ -165,7 +161,6 @@ async def fetch_observation(
         obs_time_utc=obs_time_utc,
         local_time=now_local,
         is_past_cutoff=is_past_cutoff,
-        measure_type=measure_type,
         anomaly_detected=anomaly,
     )
 
@@ -174,7 +169,7 @@ async def fetch_observed_high(
     client: httpx.AsyncClient,
     city: str,
 ) -> ObservedHigh | None:
-    return await fetch_observation(client, city, measure_type="high")
+    return await fetch_observation(client, city)
 
 
 def resolve_icao_from_description(description: str) -> str | None:
@@ -203,9 +198,6 @@ def should_filter_bucket(
         return False
     if bucket_temp_low_c == float("-inf"):
         return False
-    if obs.measure_type == "low":
-        floor_obs = math.floor(obs.observed_c)
-        return bucket_temp_low_c > floor_obs
     floor_obs = math.floor(obs.observed_c)
     return bucket_temp_low_c < floor_obs
 
@@ -226,7 +218,6 @@ def filter_recommendations(
                 city=r.city,
                 bucket_low_c=r.bucket.temp_low,
                 observed_c=obs.observed_c,
-                measure_type=obs.measure_type,
             )
             continue
         if r.direction == "NO" and not should_filter_bucket(r.bucket.temp_low, obs):

@@ -46,19 +46,19 @@ async def run_scan(
                 return
 
             progress.update(task, description="Fetching forecasts...")
-            forecasts = {}
+            forecasts: dict[str, Any] = {}
             for ev in events:
-                fc = await fetch_forecast(client, ev.city, ev.date, measure_type=ev.measure_type)
+                fc = await fetch_forecast(client, ev.city, ev.date)
                 if fc:
-                    forecasts[(ev.city, ev.measure_type)] = fc
+                    forecasts[ev.city] = fc
 
-            obs_map: dict[tuple[str, str], Any] = {}
+            obs_map: dict[str, Any] = {}
             if observed:
                 progress.update(task, description="Fetching observations...")
-                for city, mt in {(ev.city, ev.measure_type) for ev in events}:
-                    obs = await fetch_observation(client, city, measure_type=mt)
+                for city in {ev.city for ev in events}:
+                    obs = await fetch_observation(client, city)
                     if obs:
-                        obs_map[(city, mt)] = obs
+                        obs_map[city] = obs
 
             progress.update(task, description="Computing edges...")
             all_recs = []
@@ -67,13 +67,13 @@ async def run_scan(
                     kwargs: dict = {}
                     for k, v in STRATEGY_DEFAULTS.get(strat_name, {}).items():
                         kwargs[k] = edge_override if k in ("edge_min",) and edge_override else v
-                    if (ev.city, ev.measure_type) in forecasts:
-                        kwargs["forecast"] = forecasts[(ev.city, ev.measure_type)]
+                    if ev.city in forecasts:
+                        kwargs["forecast"] = forecasts[ev.city]
                     recs = strat.run(ev, **kwargs)
                     if edge_override is not None:
                         recs = [r for r in recs if r.edge >= edge_override]
-                    if (ev.city, ev.measure_type) in obs_map:
-                        recs = filter_recommendations(recs, obs_map[(ev.city, ev.measure_type)])
+                    if ev.city in obs_map:
+                        recs = filter_recommendations(recs, obs_map[ev.city])
                     all_recs.extend(recs)
 
     if verbose:

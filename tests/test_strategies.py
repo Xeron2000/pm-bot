@@ -10,7 +10,6 @@ from pm_bot.models.market import (
     TemperatureBucket,
     WeatherEvent,
     ForecastResult,
-    Recommendation,
 )
 
 

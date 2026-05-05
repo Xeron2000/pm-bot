@@ -16,7 +16,6 @@ from pm_bot.backtest.real_data import (
     _parse_flexible_date,
     _synthesize_ensemble,
     _is_weather_title,
-    _detect_measure_type,
     SERIES_SLUG_TO_CITY,
     WEATHER_SERIES_SLUGS,
     PricePoint,
@@ -55,7 +54,7 @@ class TestResolvedEvent:
     def test_defaults(self):
         re = ResolvedEvent(
             event_id="ev1", title="t", slug="s",
-            city="NYC", measure_type="high", target_date="2026-01-15",
+            city="NYC", target_date="2026-01-15",
         )
         assert re.markets == []
 
@@ -183,7 +182,7 @@ class TestRealDataFetcherEnrichEventsWithClobPrices:
             )
             ev = ResolvedEvent(
                 event_id="ev1", title="t", slug="s",
-                city="New York", measure_type="high", target_date="2026-01-15",
+                city="New York", target_date="2026-01-15",
                 markets=[market],
             )
             await fetcher.enrich_events_with_clob_prices(client, [ev])
@@ -200,7 +199,7 @@ class TestRealDataFetcherEnrichEventsWithClobPrices:
             )
             ev = ResolvedEvent(
                 event_id="ev1", title="t", slug="s",
-                city="New York", measure_type="high", target_date="2026-01-15",
+                city="New York", target_date="2026-01-15",
                 markets=[market],
             )
             await fetcher.enrich_events_with_clob_prices(client, [ev])
@@ -530,14 +529,6 @@ class TestIsWeatherTitle:
         assert _is_weather_title("Election results") is False
 
 
-class TestDetectMeasureType:
-    def test_high(self):
-        assert _detect_measure_type("High temp in NYC") == "high"
-
-    def test_low(self):
-        assert _detect_measure_type("Lowest temp in London") == "low"
-
-
 class TestRealDataFetcherGetCachedForecast:
     def test_no_cache(self):
         fetcher = RealDataFetcher(db_path=Path(tempfile.mkdtemp()) / "test.db")
@@ -549,7 +540,7 @@ class TestRealDataFetcherGetCachedForecast:
         fetcher = RealDataFetcher(db_path=Path(tempfile.mkdtemp()) / "test.db")
         fr = ForecastResult(
             city="New York", date="2026-01-15", model="gfs_seamless",
-            temp_high_c=25.0, measure_type="high", members=[25.0],
+            temp_high_c=25.0, members=[25.0],
         )
         fetcher._forecast_cache["New York:2026-01-15:high"] = fr
         result = fetcher.get_cached_forecast("New York", "2026-01-15")
@@ -692,7 +683,7 @@ class TestRealDataFetcherEnrichEventsWithDunePrices:
             )
             ev = ResolvedEvent(
                 event_id="ev1", title="t", slug="s",
-                city="New York", measure_type="high", target_date="2026-01-15",
+                city="New York", target_date="2026-01-15",
                 markets=[market],
             )
             await fetcher.enrich_events_with_dune_prices(client, [ev], dune_api_key="")
@@ -711,7 +702,7 @@ class TestRealDataFetcherEnrichEventsWithDunePrices:
             )
             ev = ResolvedEvent(
                 event_id="ev1", title="t", slug="s",
-                city="New York", measure_type="high", target_date="2026-01-15",
+                city="New York", target_date="2026-01-15",
                 markets=[market],
             )
             # With Dune API key but market already has CLOB price

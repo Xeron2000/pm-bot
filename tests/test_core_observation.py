@@ -8,9 +8,7 @@ from pm_bot.core.observation import (
     get_icao,
     CITY_ICAO,
     CITY_TZ,
-    HIGH_CUTOFF_HOUR,
-    LOW_CUTOFF_HOUR,
-    SPIKE_THRESHOLD_C,
+    CUTOFF_HOUR,
 )
 from pm_bot.models.market import (
     TemperatureBucket,
@@ -26,7 +24,7 @@ class TestObservedTemp:
             city="New York", observed_c=25.0,
             obs_time_utc=datetime.now(timezone.utc),
             local_time=datetime.now(timezone.utc),
-            is_past_cutoff=True, measure_type="high",
+            is_past_cutoff=True,
         )
         assert obs.observed_c == 25.0
         assert obs.is_past_cutoff is True
@@ -39,7 +37,7 @@ class TestShouldFilterBucket:
             city="NYC", observed_c=25.0,
             obs_time_utc=datetime.now(timezone.utc),
             local_time=datetime.now(timezone.utc),
-            is_past_cutoff=False, measure_type="high",
+            is_past_cutoff=False,
         )
         assert should_filter_bucket(23.0, obs) is False
 
@@ -48,7 +46,7 @@ class TestShouldFilterBucket:
             city="NYC", observed_c=25.4,
             obs_time_utc=datetime.now(timezone.utc),
             local_time=datetime.now(timezone.utc),
-            is_past_cutoff=True, measure_type="high",
+            is_past_cutoff=True,
         )
         assert should_filter_bucket(20.0, obs) is True
         assert should_filter_bucket(24.0, obs) is True
@@ -58,7 +56,7 @@ class TestShouldFilterBucket:
             city="NYC", observed_c=25.4,
             obs_time_utc=datetime.now(timezone.utc),
             local_time=datetime.now(timezone.utc),
-            is_past_cutoff=True, measure_type="high",
+            is_past_cutoff=True,
         )
         assert should_filter_bucket(25.0, obs) is False
 
@@ -67,48 +65,48 @@ class TestShouldFilterBucket:
             city="NYC", observed_c=25.4,
             obs_time_utc=datetime.now(timezone.utc),
             local_time=datetime.now(timezone.utc),
-            is_past_cutoff=True, measure_type="high",
+            is_past_cutoff=True,
         )
         assert should_filter_bucket(26.0, obs) is False
 
-    def test_low_temp_filter_above_floor(self):
+    def test_filter_below_observed_floor(self):
         obs = ObservedTemp(
-            city="NYC", observed_c=5.4,
+            city="NYC", observed_c=25.4,
             obs_time_utc=datetime.now(timezone.utc),
             local_time=datetime.now(timezone.utc),
-            is_past_cutoff=True, measure_type="low",
+            is_past_cutoff=True,
         )
-        assert should_filter_bucket(7.0, obs) is True
-        assert should_filter_bucket(6.0, obs) is True
+        assert should_filter_bucket(23.0, obs) is True
+        assert should_filter_bucket(24.0, obs) is True
 
-    def test_low_temp_no_filter_at_or_below_floor(self):
+    def test_no_filter_at_or_above_floor(self):
         obs = ObservedTemp(
-            city="NYC", observed_c=5.4,
+            city="NYC", observed_c=25.4,
             obs_time_utc=datetime.now(timezone.utc),
             local_time=datetime.now(timezone.utc),
-            is_past_cutoff=True, measure_type="low",
+            is_past_cutoff=True,
         )
-        assert should_filter_bucket(5.0, obs) is False
-        assert should_filter_bucket(4.0, obs) is False
+        assert should_filter_bucket(25.0, obs) is False
+        assert should_filter_bucket(26.0, obs) is False
 
     def test_tail_low_inf_not_filtered(self):
         obs = ObservedTemp(
             city="NYC", observed_c=25.4,
             obs_time_utc=datetime.now(timezone.utc),
             local_time=datetime.now(timezone.utc),
-            is_past_cutoff=True, measure_type="high",
+            is_past_cutoff=True,
         )
         assert should_filter_bucket(float("-inf"), obs) is False
 
 
 class TestFilterRecommendations:
-    def _make_obs(self, observed_c=25.4, measure_type="high", is_past_cutoff=True):
+    def _make_obs(self, observed_c=25.4, is_past_cutoff=True):
         return ObservedTemp(
             city="NYC", observed_c=observed_c,
             obs_time_utc=datetime.now(timezone.utc),
             local_time=datetime.now(timezone.utc),
             is_past_cutoff=is_past_cutoff,
-            measure_type=measure_type,
+            
         )
 
     def _make_rec(self, direction, temp_low=23.0, temp_high=23.0, yes_price=0.2):
@@ -201,12 +199,9 @@ class TestGetIcao:
         assert icao is None
 
 
-class TestCutoffHours:
-    def test_high_cutoff_5pm(self):
-        assert HIGH_CUTOFF_HOUR == 17
-
-    def test_low_cutoff_7am(self):
-        assert LOW_CUTOFF_HOUR == 7
+class TestCutoffHour:
+    def test_cutoff_5pm(self):
+        assert CUTOFF_HOUR == 17
 
 
 class TestCityTimezones:

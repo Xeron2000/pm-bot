@@ -113,8 +113,8 @@ class ResolvedEvent:
     title: str
     slug: str
     city: str
-    measure_type: str
     target_date: str
+    measure_type: str = "high"
     markets: list[ResolvedMarket] = field(default_factory=list)
 
 
@@ -311,11 +311,9 @@ def _parse_flexible_date(date_str: str, title: str = "") -> Any | None:
     return None
 
 
-def _detect_measure_type(title: str) -> str:
+def _is_high_temp_market(title: str) -> bool:
     tl = title.lower()
-    if "lowest" in tl or "low temperature" in tl or "low temp" in tl:
-        return "low"
-    return "high"
+    return not ("lowest" in tl or "low temperature" in tl or "low temp" in tl)
 
 
 class RealDataFetcher:
@@ -420,7 +418,9 @@ class RealDataFetcher:
                     if ev_date < cutoff:
                         break
 
-                    measure_type = _detect_measure_type(title)
+                    if not _is_high_temp_market(title):
+                        continue
+
                     raw_markets = ev.get("markets", [])
 
                     resolved_markets: list[ResolvedMarket] = []
@@ -436,13 +436,13 @@ class RealDataFetcher:
                     if not winning_markets:
                         continue
 
-                    ev_id = f"{city_name}-{ev_date.isoformat()}-{measure_type}"
+                    ev_id = f"{city_name}-{ev_date.isoformat()}-high"
                     resolved = ResolvedEvent(
                         event_id=ev_id,
                         title=title,
                         slug=ev.get("slug", ""),
                         city=city_name,
-                        measure_type=measure_type,
+                        measure_type="high",
                         target_date=ev_date.isoformat(),
                         markets=resolved_markets,
                     )
@@ -451,7 +451,7 @@ class RealDataFetcher:
                     try:
                         conn.execute(
                             "INSERT OR IGNORE INTO bt_resolved_events (event_id, title, city, target_date, measure_type, slug) VALUES (?, ?, ?, ?, ?, ?)",
-                            (ev_id, title, city_name, ev_date.isoformat(), measure_type, ev.get("slug", "")),
+                            (ev_id, title, city_name, ev_date.isoformat(), "high", ev.get("slug", "")),
                         )
                     except sqlite3.Error:
                         pass
@@ -917,75 +917,72 @@ class RealDataFetcher:
 
             lat, lon = coords
 
-            for measure_type in ("high", "low"):
-                daily_var = "temperature_2m_max" if measure_type == "high" else "temperature_2m_min"
+            try:
+                resp = await client.get(
+                    PREVIOUS_RUNS_URL,
+                    params={
+                        "latitude": lat,
+                        "longitude": lon,
+                        "daily": "temperature_2m_max",
+                        "models": model,
+                        "past_days": min(days, 365),
+                        "timezone": "auto",
+                    },
+                    timeout=30.0,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+            except httpx.HTTPError as e:
+                log.warning("previous_runs_fetch_failed", city=city, error=str(e))
+                continue
 
-                try:
-                    resp = await client.get(
-                        PREVIOUS_RUNS_URL,
-                        params={
-                            "latitude": lat,
-                            "longitude": lon,
-                            "daily": daily_var,
-                            "models": model,
-                            "past_days": min(days, 365),
-                            "timezone": "auto",
-                        },
-                        timeout=30.0,
-                    )
-                    resp.raise_for_status()
-                    data = resp.json()
-                except httpx.HTTPError as e:
-                    log.warning("previous_runs_fetch_failed", city=city, error=str(e))
+            daily = data.get("daily", {})
+            times = daily.get("time", [])
+            temps = daily.get("temperature_2m_max", [])
+
+            for i, t in enumerate(times):
+                if i >= len(temps) or not isinstance(temps[i], (int, float)):
                     continue
 
-                daily = data.get("daily", {})
-                times = daily.get("time", [])
-                temps = daily.get(daily_var, [])
+                cache_key = f"{canonical}:{t}:high"
+                if cache_key in self._forecast_cache:
+                    continue
 
-                for i, t in enumerate(times):
-                    if i >= len(temps) or not isinstance(temps[i], (int, float)):
-                        continue
+                members: list[float] = []
+                for mi in range(1, 36):
+                    key = f"temperature_2m_max_member{mi:02d}"
+                    m_data = daily.get(key, [])
+                    if i < len(m_data) and isinstance(m_data[i], (int, float)):
+                        members.append(float(m_data[i]))
 
-                    cache_key = f"{canonical}:{t}:{measure_type}"
-                    if cache_key in self._forecast_cache:
-                        continue
+                if not members:
+                    members = _synthesize_ensemble(float(temps[i]), city=canonical)
 
-                    members: list[float] = []
-                    for mi in range(1, 36):
-                        key = f"{daily_var}_member{mi:02d}"
-                        m_data = daily.get(key, [])
-                        if i < len(m_data) and isinstance(m_data[i], (int, float)):
-                            members.append(float(m_data[i]))
+                fr = ForecastResult(
+                    city=canonical,
+                    date=t,
+                    model=model,
+                    temp_high_c=float(temps[i]),
+                    measure_type="high",
+                    members=members,
+                )
+                self._forecast_cache[cache_key] = fr
 
-                    if not members:
-                        members = _synthesize_ensemble(float(temps[i]), city=canonical)
-
-                    fr = ForecastResult(
-                        city=canonical,
-                        date=t,
-                        model=model,
-                        temp_high_c=float(temps[i]),
-                        measure_type=measure_type,
-                        members=members,
+                try:
+                    conn.execute(
+                        "INSERT OR IGNORE INTO bt_previous_forecasts (city, date, model, temp_high_c, members_json) VALUES (?, ?, ?, ?, ?)",
+                        (canonical, t, model, float(temps[i]), json.dumps(members)),
                     )
-                    self._forecast_cache[cache_key] = fr
-
-                    try:
-                        conn.execute(
-                            "INSERT OR IGNORE INTO bt_previous_forecasts (city, date, model, temp_high_c, members_json) VALUES (?, ?, ?, ?, ?)",
-                            (canonical, t, model, float(temps[i]), json.dumps(members)),
-                        )
-                    except sqlite3.Error:
-                        pass
+                except sqlite3.Error:
+                    pass
 
             conn.commit()
 
         log.info("forecasts_prefetched", cities=len(cities), cached=len(self._forecast_cache))
 
-    def get_cached_forecast(self, city: str, date: str, measure_type: str = "high") -> ForecastResult | None:
+    def get_cached_forecast(self, city: str, date: str) -> ForecastResult | None:
         canonical = resolve_city_alias(city)
-        cache_key = f"{canonical}:{date}:{measure_type}"
+        cache_key = f"{canonical}:{date}:high"
         if cache_key in self._forecast_cache:
             return self._forecast_cache[cache_key]
 
@@ -1002,7 +999,7 @@ class RealDataFetcher:
                 date=date,
                 model=model,
                 temp_high_c=row["temp_high_c"],
-                measure_type=measure_type,
+                measure_type="high",
                 members=cached_members,
             )
             self._forecast_cache[cache_key] = fr

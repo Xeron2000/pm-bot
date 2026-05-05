@@ -16,8 +16,7 @@ ENSEMBLE_BASE = "https://ensemble-api.open-meteo.com/v1/ensemble"
 _forecast_cache: TTLCache[str, ForecastResult] = TTLCache(maxsize=128, ttl=CACHE_TTL["forecast"])
 
 # Open-Meteo GFS ensemble member key pattern
-_MEMBER_KEYS_MAX = [f"temperature_2m_max_member{i:02d}" for i in range(1, 36)]
-_MEMBER_KEYS_MIN = [f"temperature_2m_min_member{i:02d}" for i in range(1, 36)]
+_MEMBER_KEYS = [f"temperature_2m_max_member{i:02d}" for i in range(1, 36)]
 
 
 async def fetch_forecast(
@@ -25,7 +24,6 @@ async def fetch_forecast(
     city: str,
     date: str = "",
     model: str = "gfs_seamless",
-    measure_type: str = "high",
 ) -> ForecastResult | None:
     coords = CITY_COORDS.get(city)
     if not coords:
@@ -33,19 +31,18 @@ async def fetch_forecast(
         return None
 
     lat, lon = coords
-    key = f"{city}:{model}:{measure_type}"
+    key = f"{city}:{model}:high"
     if key in _forecast_cache:
         return _forecast_cache[key]
 
     params: dict[str, str | int | float] = {
         "latitude": lat,
         "longitude": lon,
-        "daily": "temperature_2m_min" if measure_type == "low" else "temperature_2m_max",
+        "daily": "temperature_2m_max",
         "forecast_days": 3,
         "timezone": "auto",
     }
 
-    # Fetch main deterministic forecast
     try:
         params_model = {**params, "models": model}
         resp = await client.get(f"{OPEN_METEO_BASE}/forecast", params=params_model)
@@ -55,12 +52,10 @@ async def fetch_forecast(
         log.error("weather_api_error", city=city, error=str(e))
         return None
 
-    temp_key = "temperature_2m_min" if measure_type == "low" else "temperature_2m_max"
     daily = data.get("daily", {})
-    temps = daily.get(temp_key, [])
+    temps = daily.get("temperature_2m_max", [])
     main_temp = float(temps[0]) if temps and isinstance(temps[0], (int, float)) else 0.0
 
-    # Fetch ensemble members from separate endpoint
     members: list[float] = []
     try:
         params_ens = {**params, "models": model}
@@ -68,8 +63,7 @@ async def fetch_forecast(
         resp.raise_for_status()
         ens_data = resp.json()
         ens_daily = ens_data.get("daily", {})
-        member_keys = _MEMBER_KEYS_MIN if measure_type == "low" else _MEMBER_KEYS_MAX
-        for mk in member_keys:
+        for mk in _MEMBER_KEYS:
             member_data = ens_daily.get(mk, [])
             if member_data:
                 v = member_data[0]
@@ -83,7 +77,7 @@ async def fetch_forecast(
         date=date,
         model=model,
         temp_high_c=main_temp,
-        measure_type=measure_type,
+        measure_type="high",
         members=members,
     )
 

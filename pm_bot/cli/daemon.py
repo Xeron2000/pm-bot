@@ -135,20 +135,20 @@ class TradingDaemon:
 
             forecasts: dict[str, ForecastResult] = {}
             consensus_forecasts: dict[str, Any] = {}
-            obs_map: dict[tuple[str, str], Any] = {}
+            obs_map: dict[str, Any] = {}
             for ev in events:
-                fc = await fetch_forecast(client, ev.city, ev.date, measure_type=ev.measure_type)
+                fc = await fetch_forecast(client, ev.city, ev.date)
                 if fc:
                     forecasts[ev.city] = fc
                 cf = await fetch_all_sources(client, ev.city, ev.date, self.config, fc)
                 consensus_forecasts[ev.city] = cf
 
-            for city, mt in {(ev.city, ev.measure_type) for ev in events}:
-                obs = await fetch_observation(client, city, measure_type=mt)
+            for city in {ev.city for ev in events}:
+                obs = await fetch_observation(client, city)
                 if obs:
-                    obs_map[(city, mt)] = obs
+                    obs_map[city] = obs
                     if obs.is_past_cutoff:
-                        log.info("observation_locked", city=city, measure_type=mt, observed_c=obs.observed_c)
+                        log.info("observation_locked", city=city, observed_c=obs.observed_c)
 
             all_recs: list[Recommendation] = []
             for ev in events:
@@ -176,8 +176,8 @@ class TradingDaemon:
 
                     recs = strat.run(ev, **kwargs)
 
-                    if (ev.city, ev.measure_type) in obs_map:
-                        recs = filter_recommendations(recs, obs_map[(ev.city, ev.measure_type)])
+                    if ev.city in obs_map:
+                        recs = filter_recommendations(recs, obs_map[ev.city])
 
                     for rec in recs:
                         if rec.edge < 0.05:
@@ -527,7 +527,7 @@ async def _fetch_forecast_at(
     date: str = "",
     model: str = "gfs_seamless",
 ) -> ForecastResult | None:
-    from pm_bot.core.weather import OPEN_METEO_BASE, ENSEMBLE_BASE, _MEMBER_KEYS_MAX
+    from pm_bot.core.weather import OPEN_METEO_BASE, ENSEMBLE_BASE, _MEMBER_KEYS
 
     params: dict[str, str | int | float] = {
         "latitude": lat,
@@ -556,7 +556,7 @@ async def _fetch_forecast_at(
         resp.raise_for_status()
         ens_data = resp.json()
         ens_daily = ens_data.get("daily", {})
-        for mk in _MEMBER_KEYS_MAX:
+        for mk in _MEMBER_KEYS:
             member_data = ens_daily.get(mk, [])
             if member_data:
                 v = member_data[0]

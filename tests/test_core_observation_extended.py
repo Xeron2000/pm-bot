@@ -1,29 +1,14 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
 
 from pm_bot.core.observation import (
-    ObservedTemp,
     fetch_metar_obs,
     fetch_previous_metar,
     fetch_observation,
-    fetch_observed_high,
-    should_filter_bucket,
-    filter_recommendations,
-    resolve_icao_from_description,
-    get_icao,
-    CITY_ICAO,
-    CITY_TZ,
-    AWC_URL,
-)
-from pm_bot.models.market import (
-    TemperatureBucket,
-    WeatherEvent,
-    Recommendation,
 )
 
 
@@ -168,23 +153,3 @@ class TestFetchObservation:
                 result = await fetch_observation(AsyncMock(), "New York")
         assert result is not None
         assert result.obs_time_utc is not None
-
-    @pytest.mark.asyncio
-    async def test_measure_type_low(self):
-        metar = {"temp": "5.0", "obsTime": "2026-01-15T06:00:00Z"}
-        with patch("pm_bot.core.observation.fetch_metar_obs", new_callable=AsyncMock, return_value=metar):
-            with patch("pm_bot.core.observation.fetch_previous_metar", new_callable=AsyncMock, return_value=None):
-                result = await fetch_observation(AsyncMock(), "New York", measure_type="low")
-        assert result is not None
-        assert result.measure_type == "low"
-
-
-class TestFetchObservedHigh:
-    @pytest.mark.asyncio
-    async def test_delegates_to_fetch_observation(self):
-        metar = {"temp": "25.0", "obsTime": "2026-01-15T18:00:00Z"}
-        with patch("pm_bot.core.observation.fetch_metar_obs", new_callable=AsyncMock, return_value=metar):
-            with patch("pm_bot.core.observation.fetch_previous_metar", new_callable=AsyncMock, return_value=None):
-                result = await fetch_observed_high(AsyncMock(), "New York")
-        assert result is not None
-        assert result.measure_type == "high"

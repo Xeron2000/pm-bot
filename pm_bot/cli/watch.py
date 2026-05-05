@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 import asyncio
 
 import httpx
@@ -90,18 +92,15 @@ async def run_watch(
                         all_recs.extend(recs)
 
                 if observed:
-                    from typing import Any
-
-                    obs_map: dict[tuple[str, str], Any] = {}
-                    for city, mt in {(ev.city, ev.measure_type) for ev in events}:
-                        obs = await fetch_observation(client, city, measure_type=mt)
+                    obs_map: dict[str, Any] = {}
+                    for city in {ev.city for ev in events}:
+                        obs = await fetch_observation(client, city)
                         if obs:
-                            obs_map[(city, mt)] = obs
+                            obs_map[city] = obs
                     filtered = []
                     for r in all_recs:
-                        key = (r.city, r.event.measure_type)
-                        if key in obs_map:
-                            remaining = filter_recommendations([r], obs_map[key])
+                        if r.city in obs_map:
+                            remaining = filter_recommendations([r], obs_map[r.city])
                             filtered.extend(remaining)
                         else:
                             filtered.append(r)

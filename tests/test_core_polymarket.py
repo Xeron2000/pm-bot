@@ -8,7 +8,6 @@ from pm_bot.core.polymarket import (
     _parse_event,
     _parse_prices,
     _extract_city_date,
-    _detect_measure_type,
     _extract_airport,
     _is_weather_event,
     fetch_weather_events,
@@ -30,20 +29,6 @@ class TestIsWeatherEvent:
 
     def test_empty_title(self):
         assert _is_weather_event({"title": ""}) is False
-
-
-class TestDetectMeasureType:
-    def test_high_default(self):
-        assert _detect_measure_type("High temperature in NYC") == "high"
-
-    def test_low(self):
-        assert _detect_measure_type("Lowest temperature in NYC") == "low"
-
-    def test_low_temp(self):
-        assert _detect_measure_type("Low temperature in NYC") == "low"
-
-    def test_low_temp_short(self):
-        assert _detect_measure_type("Low temp in NYC") == "low"
 
 
 class TestExtractCityDate:
@@ -229,19 +214,6 @@ class TestParseEvent:
         }
         result = _parse_event(ev)
         assert result is None
-
-    def test_low_measure_type(self):
-        ev = {
-            "id": "ev8",
-            "title": "Lowest temperature in New York on January 15",
-            "markets": [
-                {"question": "5°C", "id": "m1",
-                 "outcomes": "[\"Yes\", \"No\"]", "outcomePrices": "[\"0.50\", \"0.50\"]"},
-            ],
-        }
-        result = _parse_event(ev)
-        assert result is not None
-        assert result.measure_type == "low"
 
 
 class TestFetchWeatherEvents:

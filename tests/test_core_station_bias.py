@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import tempfile
 from pathlib import Path
 
@@ -8,7 +7,6 @@ from pm_bot.core.station_bias import (
     StationBiasDB,
     StationBiasEntry,
     _lead_time_bucket,
-    BIAS_DB_PATH,
     DEFAULT_ALPHA,
     WARMUP_DAYS,
 )

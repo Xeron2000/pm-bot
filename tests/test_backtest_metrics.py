@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 
 from pm_bot.backtest.metrics import (
     calculate_metrics,
