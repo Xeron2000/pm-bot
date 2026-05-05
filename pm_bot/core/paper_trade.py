@@ -1,0 +1,329 @@
+from __future__ import annotations
+
+import sqlite3
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+import structlog
+
+log = structlog.get_logger()
+
+PAPER_DB_PATH = Path.home() / ".pm-bot" / "paper-trades.db"
+
+SCHEMA_V1 = """
+CREATE TABLE IF NOT EXISTS schema_version (
+    version INTEGER PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS paper_trades (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id TEXT UNIQUE,
+    market_id TEXT NOT NULL,
+    strategy TEXT NOT NULL,
+    side TEXT NOT NULL,
+    price REAL NOT NULL,
+    size_usd REAL NOT NULL,
+    shares REAL NOT NULL,
+    kelly_fraction REAL,
+    edge REAL,
+    city TEXT,
+    temp_label TEXT,
+    reasoning TEXT,
+    status TEXT NOT NULL DEFAULT 'open',
+    settled_pnl REAL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    settled_at TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_paper_trades_market_id ON paper_trades(market_id);
+CREATE INDEX IF NOT EXISTS idx_paper_trades_status ON paper_trades(status);
+CREATE INDEX IF NOT EXISTS idx_paper_trades_city ON paper_trades(city);
+
+CREATE TABLE IF NOT EXISTS paper_state (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS paper_daily (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT UNIQUE,
+    starting_bankroll REAL NOT NULL,
+    ending_bankroll REAL NOT NULL,
+    trade_count INTEGER NOT NULL DEFAULT 0,
+    win_count INTEGER NOT NULL DEFAULT 0,
+    loss_count INTEGER NOT NULL DEFAULT 0,
+    total_pnl REAL NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+
+class PaperTradeDB:
+    def __init__(self, db_path: Path | None = None, initial_bankroll: float = 100.0) -> None:
+        self.db_path = db_path or PAPER_DB_PATH
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self._conn: sqlite3.Connection | None = None
+        self._initial_bankroll = initial_bankroll
+
+    def _get_conn(self) -> sqlite3.Connection:
+        if self._conn is not None:
+            return self._conn
+        self._conn = sqlite3.connect(str(self.db_path))
+        self._conn.row_factory = sqlite3.Row
+        self._conn.execute("PRAGMA journal_mode=WAL")
+        self._migrate()
+        self._init_bankroll()
+        return self._conn
+
+    def _migrate(self) -> None:
+        assert self._conn is not None
+        try:
+            version = self._conn.execute("SELECT MAX(version) FROM schema_version").fetchone()
+            current = version[0] if version and version[0] else 0
+        except sqlite3.OperationalError:
+            current = 0
+
+        if current < 1:
+            self._conn.executescript(SCHEMA_V1)
+            self._conn.execute("INSERT INTO schema_version (version) VALUES (1)")
+            self._conn.commit()
+            log.info("paper_db_migration_applied", version=1)
+
+    def _init_bankroll(self) -> None:
+        assert self._conn is not None
+        existing = self._conn.execute("SELECT value FROM paper_state WHERE key = 'bankroll'").fetchone()
+        if not existing:
+            self._conn.execute(
+                "INSERT INTO paper_state (key, value) VALUES (?, ?)",
+                ("bankroll", str(self._initial_bankroll)),
+            )
+            self._conn.execute(
+                "INSERT INTO paper_state (key, value) VALUES (?, ?)",
+                ("daily_spent", "0.0"),
+            )
+            self._conn.commit()
+
+    @property
+    def bankroll(self) -> float:
+        conn = self._get_conn()
+        row = conn.execute("SELECT value FROM paper_state WHERE key = 'bankroll'").fetchone()
+        return float(row[0]) if row else self._initial_bankroll
+
+    @bankroll.setter
+    def bankroll(self, value: float) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT OR REPLACE INTO paper_state (key, value, updated_at) VALUES (?, ?, ?)",
+            ("bankroll", str(value), _utc_now()),
+        )
+        conn.commit()
+
+    @property
+    def daily_spent(self) -> float:
+        conn = self._get_conn()
+        row = conn.execute("SELECT value FROM paper_state WHERE key = 'daily_spent'").fetchone()
+        return float(row[0]) if row else 0.0
+
+    @daily_spent.setter
+    def daily_spent(self, value: float) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT OR REPLACE INTO paper_state (key, value, updated_at) VALUES (?, ?, ?)",
+            ("daily_spent", str(value), _utc_now()),
+        )
+        conn.commit()
+
+    def get_city_spent(self, city: str) -> float:
+        conn = self._get_conn()
+        today = _utc_today()
+        row = conn.execute(
+            """SELECT COALESCE(SUM(size_usd), 0) FROM paper_trades
+               WHERE city = ? AND date(created_at) = ? AND status IN ('open', 'filled')""",
+            (city, today),
+        ).fetchone()
+        return float(row[0]) if row else 0.0
+
+    def get_total_exposure(self) -> float:
+        conn = self._get_conn()
+        row = conn.execute(
+            """SELECT COALESCE(SUM(size_usd), 0) FROM paper_trades
+               WHERE status IN ('open', 'filled')"""
+        ).fetchone()
+        return float(row[0]) if row else 0.0
+
+    def record_trade(
+        self,
+        order_id: str,
+        market_id: str,
+        side: str,
+        price: float,
+        size_usd: float,
+        shares: float,
+        strategy: str,
+        edge: float,
+        city: str = "",
+        temp_label: str = "",
+        kelly_fraction_val: float = 0.0,
+        reasoning: str = "",
+    ) -> bool:
+        conn = self._get_conn()
+        try:
+            conn.execute(
+                """INSERT OR IGNORE INTO paper_trades
+                   (order_id, market_id, strategy, side, price, size_usd, shares,
+                    kelly_fraction, edge, city, temp_label, reasoning)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    order_id,
+                    market_id,
+                    strategy,
+                    side,
+                    price,
+                    size_usd,
+                    shares,
+                    kelly_fraction_val,
+                    edge,
+                    city,
+                    temp_label,
+                    reasoning,
+                ),
+            )
+            conn.commit()
+            self.daily_spent = self.daily_spent + size_usd
+            return True
+        except sqlite3.IntegrityError:
+            log.warning("paper_duplicate_order", order_id=order_id)
+            return False
+
+    def check_duplicate_order(self, market_id: str, side: str) -> bool:
+        conn = self._get_conn()
+        row = conn.execute(
+            """SELECT COUNT(*) FROM paper_trades
+               WHERE market_id = ? AND side = ? AND status = 'open'""",
+            (market_id, side),
+        ).fetchone()
+        return bool(row and row[0] > 0)
+
+    def settle_market(self, market_id: str, winning_side: str) -> float:
+        conn = self._get_conn()
+        rows = conn.execute(
+            """SELECT id, order_id, side, price, size_usd, shares, strategy, city, temp_label
+               FROM paper_trades WHERE market_id = ? AND status = 'open'""",
+            (market_id,),
+        ).fetchall()
+
+        total_pnl = 0.0
+        for row in rows:
+            side = row["side"]
+            price = row["price"]
+            shares = row["shares"]
+            size_usd = row["size_usd"]
+
+            if side == "YES":
+                if winning_side == "YES":
+                    pnl = shares * (1.0 - price) - size_usd * 0.0
+                    cost = size_usd
+                    payout = shares * 1.0
+                    pnl = payout - cost
+                else:
+                    pnl = -size_usd
+            else:
+                if winning_side == "NO":
+                    payout = shares * 1.0
+                    cost = size_usd * (1.0 - price)
+                    pnl = payout - cost
+                else:
+                    pnl = -(shares * price)
+
+            total_pnl += pnl
+
+            conn.execute(
+                """UPDATE paper_trades SET status = 'settled', settled_pnl = ?, settled_at = ?
+                   WHERE id = ?""",
+                (pnl, _utc_now(), row["id"]),
+            )
+
+            log.info(
+                "paper_trade_settled",
+                order_id=row["order_id"],
+                strategy=row["strategy"],
+                city=row["city"],
+                temp_label=row["temp_label"],
+                side=side,
+                winning=winning_side,
+                pnl=pnl,
+            )
+
+        conn.commit()
+
+        if total_pnl != 0:
+            self.bankroll = self.bankroll + total_pnl
+
+        return total_pnl
+
+    def settle_by_temperature(self, market_id: str, observed_temp_c: float, temp_unit: str = "C") -> float:
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT side FROM paper_trades WHERE market_id = ? AND status = 'open' LIMIT 1",
+            (market_id,),
+        ).fetchone()
+        if not row:
+            return 0.0
+
+        return self.settle_market(market_id, winning_side="YES")
+
+    def get_open_trades(self) -> list[dict[str, Any]]:
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM paper_trades WHERE status = 'open' ORDER BY created_at DESC"
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_recent_trades(self, limit: int = 50) -> list[dict[str, Any]]:
+        conn = self._get_conn()
+        rows = conn.execute(
+            "SELECT * FROM paper_trades ORDER BY created_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def get_settled_pnl(self) -> float:
+        conn = self._get_conn()
+        row = conn.execute("SELECT COALESCE(SUM(settled_pnl), 0) FROM paper_trades WHERE status = 'settled'").fetchone()
+        return float(row[0]) if row else 0.0
+
+    def get_trade_stats(self) -> dict[str, Any]:
+        conn = self._get_conn()
+        total = conn.execute("SELECT COUNT(*) FROM paper_trades WHERE status = 'settled'").fetchone()[0]
+        wins = conn.execute("SELECT COUNT(*) FROM paper_trades WHERE status = 'settled' AND settled_pnl > 0").fetchone()[0]
+        total_pnl = conn.execute("SELECT COALESCE(SUM(settled_pnl), 0) FROM paper_trades WHERE status = 'settled'").fetchone()[0]
+        open_count = conn.execute("SELECT COUNT(*) FROM paper_trades WHERE status = 'open'").fetchone()[0]
+
+        return {
+            "total_settled": total,
+            "wins": wins,
+            "losses": total - wins,
+            "win_rate": wins / total if total > 0 else 0.0,
+            "total_pnl": total_pnl,
+            "open_positions": open_count,
+            "bankroll": self.bankroll,
+            "return_pct": (self.bankroll / self._initial_bankroll - 1.0) * 100 if self._initial_bankroll > 0 else 0.0,
+        }
+
+    def reset_daily(self) -> None:
+        self.daily_spent = 0.0
+
+    def close(self) -> None:
+        if self._conn:
+            self._conn.close()
+            self._conn = None
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _utc_today() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")

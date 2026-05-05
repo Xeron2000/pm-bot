@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from typing import Optional
 
 import typer
@@ -166,24 +167,25 @@ def config(
 @daemon_app.command("start")
 def daemon_start_cmd(
     debug: bool = typer.Option(False, "--debug", "-d", help="Enable debug logging"),
-    dry_run: bool = typer.Option(False, "--dry-run", help="Dry-run mode: log signals without placing orders"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Dry-run mode: paper trade with fake bankroll"),
     strategies: Optional[str] = typer.Option(
         None, "--strategies", "-s", help="Comma-separated strategy names (default: all)"
     ),
     kelly: Optional[float] = typer.Option(None, "--kelly", "-k", help="Kelly fraction override (e.g. 0.15)"),
     stop_loss: Optional[float] = typer.Option(None, "--stop-loss", help="Stop-loss fraction override (e.g. 0.2)"),
+    bankroll: Optional[float] = typer.Option(None, "--bankroll", "-b", help="Starting bankroll (default: 100 dry-run, 500 live)"),
 ):
     """Start the 24/7 automated trading daemon."""
     from pm_bot.cli.daemon import daemon_start
 
     strat_names = [s.strip() for s in strategies.split(",") if s.strip()] if strategies else None
 
-    if kelly is not None or stop_loss is not None:
-        import os
-        if kelly is not None:
-            os.environ["PM_BOT_KELLY"] = str(kelly)
-        if stop_loss is not None:
-            os.environ.setdefault("PM_BOT_STOP_LOSS", str(stop_loss))
+    if kelly is not None:
+        os.environ["PM_BOT_KELLY"] = str(kelly)
+    if stop_loss is not None:
+        os.environ.setdefault("PM_BOT_STOP_LOSS", str(stop_loss))
+    if bankroll is not None:
+        os.environ["PM_BOT_BANKROLL"] = str(bankroll)
 
     asyncio.run(daemon_start(debug=debug, dry_run=dry_run, strategy_names=strat_names))
 
@@ -262,3 +264,69 @@ def backtest(
             debug=debug,
         )
     )
+
+
+@app.command("paper-pnl")
+def paper_pnl(
+    limit: int = typer.Option(50, "--limit", "-n", help="Number of recent trades to show"),
+    reset: bool = typer.Option(False, "--reset", help="Reset paper trading DB (start fresh)"),
+):
+    """View dry-run paper trading performance."""
+    from pm_bot.core.paper_trade import PaperTradeDB
+    from rich.console import Console
+    from rich.table import Table
+
+    console = Console()
+
+    if reset:
+        from pathlib import Path
+        db_path = Path.home() / ".pm-bot" / "paper-trades.db"
+        if db_path.exists():
+            db_path.unlink()
+            console.print("[green]Paper trading DB reset.[/green]")
+        return
+
+    paper = PaperTradeDB()
+    stats = paper.get_trade_stats()
+
+    table = Table(title="Paper Trading Performance")
+    table.add_column("Metric", style="cyan")
+    table.add_column("Value", style="green")
+    table.add_row("Bankroll", f"${stats['bankroll']:.2f}")
+    table.add_row("Return", f"{stats['return_pct']:.1f}%")
+    table.add_row("Total P&L", f"${stats['total_pnl']:.2f}")
+    table.add_row("Settled Trades", str(stats["total_settled"]))
+    table.add_row("Win Rate", f"{stats['win_rate']:.0%}")
+    table.add_row("Wins / Losses", f"{stats['wins']} / {stats['losses']}")
+    table.add_row("Open Positions", str(stats["open_positions"]))
+    console.print(table)
+
+    trades = paper.get_recent_trades(limit=limit)
+    if trades:
+        ttable = Table(title=f"Recent Trades (last {len(trades)})")
+        ttable.add_column("Time", style="dim")
+        ttable.add_column("Strategy", style="cyan")
+        ttable.add_column("City", style="green")
+        ttable.add_column("Side")
+        ttable.add_column("Price")
+        ttable.add_column("Size")
+        ttable.add_column("Edge")
+        ttable.add_column("Status")
+        ttable.add_column("P&L")
+        for tr in trades:
+            pnl_str = f"${tr.get('settled_pnl', 0):.2f}" if tr.get("settled_pnl") is not None else "-"
+            status = tr.get("status", "open")
+            status_style = "green" if status == "settled" else "yellow"
+            ttable.add_row(
+                str(tr.get("created_at", ""))[:19],
+                str(tr.get("strategy", "")),
+                str(tr.get("city", "")),
+                str(tr.get("side", "")),
+                f"{tr.get('price', 0):.3f}",
+                f"${tr.get('size_usd', 0):.2f}",
+                f"{tr.get('edge', 0):.1%}",
+                f"[{status_style}]{status}[/]",
+                pnl_str,
+            )
+        console.print(ttable)
+    paper.close()

@@ -24,6 +24,7 @@ from pm_bot.core.config_loader import (
 )
 from pm_bot.core.db import TradeDB
 from pm_bot.core.kelly import compute_kelly_for_recommendation
+from pm_bot.core.paper_trade import PaperTradeDB
 from pm_bot.core.polymarket import fetch_weather_events
 from pm_bot.core.risk import RiskManager, RiskCheckResult
 from pm_bot.core.weather import fetch_forecast
@@ -57,7 +58,16 @@ class TradingDaemon:
             self.strategies = ALL_STRATEGIES
 
         self.trader = ClobTrader(config)
-        self.bankroll = float(os.environ.get("PM_BOT_BANKROLL", sizing.get("bankroll", 500.0)))
+        self.paper: PaperTradeDB | None = None
+
+        if dry_run:
+            self.paper = PaperTradeDB(initial_bankroll=float(
+                os.environ.get("PM_BOT_BANKROLL", sizing.get("bankroll", 100.0))
+            ))
+            self.bankroll = self.paper.bankroll
+        else:
+            self.bankroll = float(os.environ.get("PM_BOT_BANKROLL", sizing.get("bankroll", 500.0)))
+
         self.kelly_fraction_val = float(os.environ.get("PM_BOT_KELLY", sizing.get("kelly_fraction", 0.25)))
         self.max_single = float(os.environ.get("PM_BOT_MAX_SINGLE", sizing.get("max_single", 50.0)))
         self.max_daily = float(os.environ.get("PM_BOT_MAX_DAILY", sizing.get("max_daily", 200.0)))
@@ -191,7 +201,8 @@ class TradingDaemon:
                     for rec in recs:
                         if rec.edge < 0.05:
                             continue
-                        if self.db.check_duplicate_order(rec.bucket.market_id, rec.direction):
+                        dup_db = self.paper if self.dry_run else self.db
+                        if dup_db is not None and dup_db.check_duplicate_order(rec.bucket.market_id, rec.direction):
                             continue
 
                         # PRD 3B: Apply consensus agreement to edge/Kelly
@@ -226,13 +237,20 @@ class TradingDaemon:
                             continue
 
                         effective_kelly = self.kelly_fraction_val * risk_result.kelly_adjustment * agreement_adj
-                        daily_spent = self.db.get_daily_spent()
-                        city_spent = self.db.get_city_spent(rec.city)
-                        total_exposure = self.db.get_total_exposure()
+                        if self.dry_run and self.paper is not None:
+                            daily_spent = self.paper.daily_spent
+                            city_spent = self.paper.get_city_spent(rec.city)
+                            total_exposure = self.paper.get_total_exposure()
+                            sizing_bankroll = self.paper.bankroll
+                        else:
+                            daily_spent = self.db.get_daily_spent()
+                            city_spent = self.db.get_city_spent(rec.city)
+                            total_exposure = self.db.get_total_exposure()
+                            sizing_bankroll = self.bankroll
 
                         sized = compute_kelly_for_recommendation(
                             rec,
-                            bankroll=self.bankroll,
+                            bankroll=sizing_bankroll,
                             kelly_multiplier=effective_kelly,
                             max_single=self.max_single,
                             max_daily=self.max_daily,
@@ -255,7 +273,10 @@ class TradingDaemon:
             await self._auto_settle()
 
     async def _auto_settle(self) -> None:
-        if self.dry_run or not self.trader.is_configured():
+        if self.dry_run:
+            await self._paper_settle()
+            return
+        if not self.trader.is_configured():
             return
         try:
             positions = self.trader.get_redeemable_positions()
@@ -278,6 +299,51 @@ class TradingDaemon:
         except Exception as e:
             log.warning("auto_settle_failed", error=str(e))
 
+    async def _paper_settle(self) -> None:
+        if not self.paper:
+            return
+        try:
+            open_trades = self.paper.get_open_trades()
+            if not open_trades:
+                return
+
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                settled_events = await fetch_weather_events(client, include_closed=True)
+                settled_map: dict[str, Any] = {}
+                for ev in settled_events:
+                    for b in ev.buckets:
+                        if b.market_id:
+                            settled_map[b.market_id] = ev
+
+            total_settled = 0
+            total_pnl = 0.0
+            for trade in open_trades:
+                mid = trade["market_id"]
+                if mid in settled_map:
+                    ev = settled_map[mid]
+                    for b in ev.buckets:
+                        if b.market_id == mid:
+                            if b.yes_price > 0.95:
+                                pnl = self.paper.settle_market(mid, winning_side="YES")
+                                total_pnl += pnl
+                                total_settled += 1
+                            elif b.no_price > 0.95:
+                                pnl = self.paper.settle_market(mid, winning_side="NO")
+                                total_pnl += pnl
+                                total_settled += 1
+                            break
+
+            if total_settled > 0:
+                self.bankroll = self.paper.bankroll
+                log.info(
+                    "paper_settled",
+                    count=total_settled,
+                    pnl=total_pnl,
+                    bankroll=self.bankroll,
+                )
+        except Exception as e:
+            log.warning("paper_settle_failed", error=str(e))
+
     async def _execute_trade(self, rec: Recommendation) -> None:
         bucket = rec.bucket
         price = rec.price
@@ -288,13 +354,15 @@ class TradingDaemon:
 
         size_shares = size_usd / price if price > 0 else 1
 
-        if self.dry_run:
-            self.db.record_trade(
+        if self.dry_run and self.paper is not None:
+            shares = size_usd / price if price > 0 else 1
+            self.paper.record_trade(
                 order_id=f"DRY-{self.cycle_count}-{self.trades_this_cycle}",
                 market_id=bucket.market_id,
                 side=rec.direction,
                 price=price,
-                amount_usd=size_usd,
+                size_usd=size_usd,
+                shares=shares,
                 strategy=rec.strategy,
                 edge=rec.edge,
                 city=rec.city,
@@ -312,6 +380,7 @@ class TradingDaemon:
                 price=price,
                 size_usd=size_usd,
                 edge=rec.edge,
+                bankroll=self.paper.bankroll if self.paper else self.bankroll,
             )
             return
 
@@ -508,10 +577,11 @@ class TradingDaemon:
                         "status": "running",
                         "cycle": self.cycle_count,
                         "trades_this_cycle": self.trades_this_cycle,
-                        "daily_spent": self.db.get_daily_spent(),
+                        "daily_spent": self.paper.daily_spent if self.dry_run and self.paper else self.db.get_daily_spent(),
                         "bankroll": self.bankroll,
                         "pid": os.getpid(),
                         "uptime": time.time() - self.start_time,
+                        "dry_run": self.dry_run,
                     }
                 )
             )
@@ -730,6 +800,22 @@ async def daemon_status(debug: bool = False) -> None:
     table.add_row("Uptime", f"{hours}h {minutes}m {seconds}s")
     table.add_row("Cycles", str(hb_data.get("cycle", 0)))
     table.add_row("Bankroll", f"${hb_data.get('bankroll', 0):.2f}")
+
+    if hb_data.get("dry_run"):
+        table.add_row("Mode", "[yellow]DRY-RUN[/yellow]")
+        paper = PaperTradeDB()
+        try:
+            stats = paper.get_trade_stats()
+            table.add_row("Paper P&L", f"${stats['total_pnl']:.2f}")
+            table.add_row("Return", f"{stats['return_pct']:.1f}%")
+            table.add_row("Win Rate", f"{stats['win_rate']:.0%}")
+            table.add_row("Settled", str(stats["total_settled"]))
+            table.add_row("Open Positions", str(stats["open_positions"]))
+        except Exception:
+            pass
+        finally:
+            paper.close()
+
     table.add_row("Daily Spent", f"${daily_spent:.2f}")
     table.add_row("Daily P&L", f"${daily_pnl:.2f}")
     table.add_row("Open Orders", str(open_trades))
