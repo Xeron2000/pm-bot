@@ -17,7 +17,7 @@ app.add_typer(daemon_app, name="daemon")
 
 @app.command()
 def scan(
-    strategy: str = typer.Option("all", "--strategy", "-s", help="Strategy: all, gopfan2, narrow_no, resolution_div, neg_risk_sum, truncation_edge, ensemble_spread"),
+    strategy: str = typer.Option("all", "--strategy", "-s", help="Strategy: all, gopfan2, resolution_div, neg_risk_sum, truncation_edge, ensemble_spread"),
     cities: Optional[str] = typer.Option(None, "--cities", "-c", help="Comma-separated cities (e.g. NYC,HK,MIA)"),
     all_cities: bool = typer.Option(False, "--all", help="Scan all available cities"),
     edge: Optional[float] = typer.Option(None, "--edge", "-e", help="Override minimum edge threshold"),

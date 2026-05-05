@@ -72,7 +72,6 @@ def get_all_strategies() -> dict[str, Strategy]:
     """Lazy construction to avoid circular imports."""
     global _all_strategies
     if _all_strategies is None:
-        from pm_bot.strategies.narrow_no import NarrowNoStrategy
         from pm_bot.strategies.resolution_divergence import ResolutionDivergenceStrategy
         from pm_bot.strategies.neg_risk_sum import NegRiskSumStrategy
         from pm_bot.strategies.truncation_edge import TruncationEdgeStrategy
@@ -80,7 +79,6 @@ def get_all_strategies() -> dict[str, Strategy]:
 
         _all_strategies = {
             "gopfan2": Gopfan2Strategy(),
-            "narrow_no": NarrowNoStrategy(),
             "resolution_div": ResolutionDivergenceStrategy(),
             "neg_risk_sum": NegRiskSumStrategy(),
             "truncation_edge": TruncationEdgeStrategy(),

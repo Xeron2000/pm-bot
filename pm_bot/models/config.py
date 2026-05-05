@@ -43,7 +43,6 @@ DEFAULT_CITIES = ["NYC", "London", "Hong Kong", "Miami", "Dallas", "Atlanta", "S
 
 STRATEGY_DEFAULTS: dict[str, dict[str, float]] = {
     "gopfan2": {"yes_max": 0.15, "no_min": 0.45},
-    "narrow_no": {"max_bucket_width_c": 2.0, "no_min": 0.45},
     "resolution_div": {"bankroll": 100.0},
     "neg_risk_sum": {"bankroll": 100.0},
     "truncation_edge": {"edge_min": 0.03},
