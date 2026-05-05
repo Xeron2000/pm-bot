@@ -37,12 +37,18 @@ class TestResolvedMarket:
         assert rm.yes_price == 0.0
         assert rm.no_price == 0.0
         assert rm.price_history == []
+        assert rm.price_source == ""
 
     def test_with_prices(self):
         rm = ResolvedMarket(question="23°C", token_id="tok1", outcome="Yes", winning=True,
                             yes_price=0.8, no_price=0.2)
         assert rm.yes_price == 0.8
         assert rm.no_price == 0.2
+
+    def test_with_price_source(self):
+        rm = ResolvedMarket(question="23°C", token_id="tok1", outcome="Yes", winning=True,
+                            yes_price=0.4, no_price=0.6, price_source="dune")
+        assert rm.price_source == "dune"
 
 
 class TestResolvedEvent:
@@ -293,7 +299,7 @@ class TestRealDataFetcherFetchMarketPrices:
             fetcher = RealDataFetcher(db_path=Path(tmpdir) / "test.db")
             conn = fetcher._get_conn()
             conn.execute(
-                "INSERT OR IGNORE INTO bt_price_history (token_id, ts, price) VALUES (?, ?, ?)",
+                "INSERT OR IGNORE INTO bt_price_history (token_id, ts, price, source) VALUES (?, ?, ?, 'clob')",
                 ("tok1", 1700000000.0, 0.55),
             )
             conn.commit()
@@ -580,7 +586,7 @@ class TestRealDataFetcherGetCachedClobPrice:
             fetcher = RealDataFetcher(db_path=db_path)
             conn = fetcher._get_conn()
             conn.execute(
-                "INSERT OR IGNORE INTO bt_price_history (token_id, ts, price) VALUES (?, ?, ?)",
+                "INSERT OR IGNORE INTO bt_price_history (token_id, ts, price, source) VALUES (?, ?, ?, 'clob')",
                 ("tok1", 1700000000.0, 0.55),
             )
             conn.commit()
@@ -619,3 +625,120 @@ class TestRealDataFetcherClose:
             fetcher.close()
             fetcher.close()
             assert fetcher._conn is None
+
+
+class TestRealDataFetcherDunePrices:
+    @pytest.mark.asyncio
+    async def test_no_api_key(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fetcher = RealDataFetcher(db_path=Path(tmpdir) / "test.db")
+            client = AsyncMock()
+            result = await fetcher.fetch_dune_prices(client, "cond1", dune_api_key="")
+            assert result == {}
+            fetcher.close()
+
+    @pytest.mark.asyncio
+    async def test_with_api_key_no_data(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fetcher = RealDataFetcher(db_path=Path(tmpdir) / "test.db")
+            client = AsyncMock()
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json.return_value = {"result": {"rows": []}}
+            resp.raise_for_status = MagicMock()
+            client.get = AsyncMock(return_value=resp)
+            result = await fetcher.fetch_dune_prices(
+                client, "cond1", dune_api_key="test_key",
+            )
+            assert result == {}
+            fetcher.close()
+
+    @pytest.mark.asyncio
+    async def test_with_api_key_and_data(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fetcher = RealDataFetcher(db_path=Path(tmpdir) / "test.db")
+            client = AsyncMock()
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.json.return_value = {
+                "result": {
+                    "rows": [
+                        {"token_id": "tok1", "price": 0.55, "hour": 1700000000.0},
+                        {"token_id": "tok2", "price": 0.30, "hour": 1700000000.0},
+                    ]
+                }
+            }
+            resp.raise_for_status = MagicMock()
+            client.get = AsyncMock(return_value=resp)
+            result = await fetcher.fetch_dune_prices(
+                client, "cond1", dune_api_key="test_key",
+            )
+            assert "tok1" in result
+            assert result["tok1"] == 0.55
+            assert "tok2" in result
+            assert result["tok2"] == 0.30
+            fetcher.close()
+
+
+class TestRealDataFetcherEnrichEventsWithDunePrices:
+    @pytest.mark.asyncio
+    async def test_no_api_key_skips(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fetcher = RealDataFetcher(db_path=Path(tmpdir) / "test.db")
+            client = AsyncMock()
+            market = ResolvedMarket(
+                question="23°C", token_id="tok12345678901234567890",
+                outcome="Yes", winning=True,
+            )
+            ev = ResolvedEvent(
+                event_id="ev1", title="t", slug="s",
+                city="New York", measure_type="high", target_date="2026-01-15",
+                markets=[market],
+            )
+            await fetcher.enrich_events_with_dune_prices(client, [ev], dune_api_key="")
+            assert market.yes_price == 0.0  # unchanged
+            fetcher.close()
+
+    @pytest.mark.asyncio
+    async def test_skips_clob_priced_markets(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fetcher = RealDataFetcher(db_path=Path(tmpdir) / "test.db")
+            client = AsyncMock()
+            market = ResolvedMarket(
+                question="23°C", token_id="tok12345678901234567890",
+                outcome="Yes", winning=True,
+                yes_price=0.55, no_price=0.45, price_source="clob",
+            )
+            ev = ResolvedEvent(
+                event_id="ev1", title="t", slug="s",
+                city="New York", measure_type="high", target_date="2026-01-15",
+                markets=[market],
+            )
+            # With Dune API key but market already has CLOB price
+            with patch.object(fetcher, "fetch_dune_prices", new_callable=AsyncMock, return_value={"tok12345678901234567890": 0.40}):
+                await fetcher.enrich_events_with_dune_prices(client, [ev], dune_api_key="test_key")
+            # Should NOT override CLOB price
+            assert market.yes_price == 0.55
+            fetcher.close()
+
+
+class TestRealDataFetcherCachedDunePrice:
+    def test_no_cache(self):
+        fetcher = RealDataFetcher(db_path=Path(tempfile.mkdtemp()) / "test.db")
+        result = fetcher._get_cached_dune_price("tok1", 1700000000.0)
+        assert result is None
+        fetcher.close()
+
+    def test_cached(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            db_path = Path(tmpdir) / "test.db"
+            fetcher = RealDataFetcher(db_path=db_path)
+            conn = fetcher._get_conn()
+            conn.execute(
+                "INSERT OR IGNORE INTO bt_price_history (token_id, ts, price, source) VALUES (?, ?, ?, 'dune')",
+                ("tok1", 1700000000.0, 0.55),
+            )
+            conn.commit()
+            result = fetcher._get_cached_dune_price("tok1", 1700000000.0)
+            assert result == 0.55
+            fetcher.close()

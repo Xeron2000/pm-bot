@@ -185,6 +185,11 @@ def backtest(
     kelly: float = typer.Option(0.25, "--kelly", help="Kelly fraction (0.25=quarter, 0.5=half, 1.0=full)"),
     max_pos: float = typer.Option(0.10, "--max-pos", help="Max single position as fraction of bankroll"),
     no_compound: bool = typer.Option(False, "--no-compound", help="Disable compounding (fixed bankroll)"),
+    live: bool = typer.Option(False, "--live", help="Live-trading mode: maker-only, $50/pos cap, 8%+ edge, ghost-trade friction"),
+    compare_forecast: bool = typer.Option(False, "--compare-forecast", help="Dual-run: all markets vs CLOB-only, showing forecast bias delta"),
+    forecast_penalty: float = typer.Option(0.05, "--forecast-penalty", help="Conservative penalty for forecast-derived prices (default: 0.05)"),
+    portfolio: bool = typer.Option(False, "--portfolio", help="Portfolio mode: all strategies share one bankroll, merged signals"),
+    seed: Optional[int] = typer.Option(None, "--seed", help="Random seed for deterministic FillModel sampling"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ):
     """Run backtest against historical data."""
@@ -202,5 +207,10 @@ def backtest(
         kelly=kelly,
         max_pos=max_pos,
         no_compound=no_compound,
+        live=live,
+        compare_forecast=compare_forecast,
+        forecast_penalty=forecast_penalty,
+        portfolio=portfolio,
+        seed=seed,
         debug=debug,
     ))

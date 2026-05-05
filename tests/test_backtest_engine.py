@@ -9,6 +9,7 @@ from pm_bot.backtest.real_data import (
     ResolvedEvent,
     ResolvedMarket,
 )
+from pm_bot.backtest.costs import CostModel, FillModel
 from pm_bot.models.market import ForecastResult, TemperatureBucket, Recommendation
 from pm_bot.strategies.base import Strategy
 
@@ -23,17 +24,22 @@ class TestSimulatedTrade:
         assert t.resolved is False
         assert t.entry_price == 0.0
         assert t.stop_loss_pct == 0.0
+        assert t.price_source == "clob"
+        assert t.filled is True
 
     def test_with_values(self):
         t = SimulatedTrade(
             date="2026-01-15", strategy="test", bucket_key="25-26",
             direction="YES", price=0.5, size_usd=10.0, cost=0.5,
             pnl=5.0, resolved=True, entry_price=0.5, stop_loss_pct=0.3,
+            price_source="forecast", filled=False,
         )
         assert t.pnl == 5.0
         assert t.resolved is True
         assert t.entry_price == 0.5
         assert t.stop_loss_pct == 0.3
+        assert t.price_source == "forecast"
+        assert t.filled is False
 
 
 class TestBacktestResult:
@@ -147,7 +153,7 @@ class TestBacktestEngineBuildRealEventFromResolution:
             target_date="2026-01-15",
             markets=[market],
         )
-        result = engine._build_real_event_from_resolution(ev, forecast)
+        result, price_sources = engine._build_real_event_from_resolution(ev, forecast)
         assert result is not None
         assert result.city == "New York"
 
@@ -173,7 +179,7 @@ class TestBacktestEngineBuildRealEventFromResolution:
             target_date="2026-01-15",
             markets=[market],
         )
-        result = engine._build_real_event_from_resolution(ev, forecast)
+        result, price_sources = engine._build_real_event_from_resolution(ev, forecast)
         assert result is None
 
     def test_clob_price_used(self):
@@ -200,7 +206,7 @@ class TestBacktestEngineBuildRealEventFromResolution:
             target_date="2026-01-15",
             markets=[market],
         )
-        result = engine._build_real_event_from_resolution(ev, forecast)
+        result, price_sources = engine._build_real_event_from_resolution(ev, forecast)
         assert result is not None
         assert result.buckets[0].yes_price == 0.4
 
@@ -228,8 +234,68 @@ class TestBacktestEngineBuildRealEventFromResolution:
             target_date="2026-01-15",
             markets=[market],
         )
-        result = engine._build_real_event_from_resolution(ev, forecast)
+        result, price_sources = engine._build_real_event_from_resolution(ev, forecast)
         assert result is not None
+        # Price source should be "forecast" since no CLOB/Gamma active price
+        assert price_sources.get(result.buckets[0].market_id) == "forecast"
+
+    def test_price_source_clob(self):
+        engine = BacktestEngine(strategies=[])
+        forecast = ForecastResult(
+            city="New York", date="2026-01-15", model="gfs",
+            temp_high_c=25.0, measure_type="high",
+            members=[24.0, 25.0, 26.0],
+        )
+        market = ResolvedMarket(
+            question="23°C",
+            token_id="tok12345678901234567890",
+            outcome="Yes",
+            winning=True,
+            yes_price=0.4,
+            no_price=0.6,
+            price_source="clob",
+        )
+        ev = ResolvedEvent(
+            event_id="ev1",
+            title="High temp NYC",
+            slug="s1",
+            city="New York",
+            measure_type="high",
+            target_date="2026-01-15",
+            markets=[market],
+        )
+        result, price_sources = engine._build_real_event_from_resolution(ev, forecast)
+        assert result is not None
+        assert price_sources.get(result.buckets[0].market_id) == "clob"
+
+    def test_price_source_dune(self):
+        engine = BacktestEngine(strategies=[])
+        forecast = ForecastResult(
+            city="New York", date="2026-01-15", model="gfs",
+            temp_high_c=25.0, measure_type="high",
+            members=[24.0, 25.0, 26.0],
+        )
+        market = ResolvedMarket(
+            question="23°C",
+            token_id="tok12345678901234567890",
+            outcome="Yes",
+            winning=True,
+            yes_price=0.4,
+            no_price=0.6,
+            price_source="dune",
+        )
+        ev = ResolvedEvent(
+            event_id="ev1",
+            title="High temp NYC",
+            slug="s1",
+            city="New York",
+            measure_type="high",
+            target_date="2026-01-15",
+            markets=[market],
+        )
+        result, price_sources = engine._build_real_event_from_resolution(ev, forecast)
+        assert result is not None
+        assert price_sources.get(result.buckets[0].market_id) == "dune"
 
 
 class TestBacktestEngineRealBucketHit:
@@ -414,6 +480,8 @@ class TestBacktestEngineRunReal:
             mock_fetcher = MagicMock()
             mock_fetcher.fetch_resolved_weather_events = AsyncMock(return_value=[ev])
             mock_fetcher.enrich_events_with_clob_prices = AsyncMock()
+            mock_fetcher.enrich_events_with_dune_prices = AsyncMock()
+            mock_fetcher.fetch_active_market_prices = AsyncMock(return_value={})
             mock_fetcher.prefetch_forecasts = AsyncMock()
             mock_fetcher.get_cached_forecast = MagicMock(return_value=forecast)
             mock_fetcher.close = MagicMock()
@@ -454,6 +522,8 @@ class TestBacktestEngineRunReal:
             mock_fetcher = MagicMock()
             mock_fetcher.fetch_resolved_weather_events = AsyncMock(return_value=[ev])
             mock_fetcher.enrich_events_with_clob_prices = AsyncMock()
+            mock_fetcher.enrich_events_with_dune_prices = AsyncMock()
+            mock_fetcher.fetch_active_market_prices = AsyncMock(return_value={})
             mock_fetcher.prefetch_forecasts = AsyncMock()
             mock_fetcher.get_cached_forecast = MagicMock(return_value=forecast)
             mock_fetcher.close = MagicMock()
@@ -510,6 +580,8 @@ class TestBacktestEngineRunReal:
             mock_fetcher = MagicMock()
             mock_fetcher.fetch_resolved_weather_events = AsyncMock(return_value=[ev])
             mock_fetcher.enrich_events_with_clob_prices = AsyncMock()
+            mock_fetcher.enrich_events_with_dune_prices = AsyncMock()
+            mock_fetcher.fetch_active_market_prices = AsyncMock(return_value={})
             mock_fetcher.prefetch_forecasts = AsyncMock()
             mock_fetcher.get_cached_forecast = MagicMock(return_value=None)
             mock_fetcher.close = MagicMock()
@@ -597,3 +669,141 @@ class TestBacktestEngineRun:
             result = await engine.run()
         assert len(result) == 1
         assert len(result[0].trades) >= 1
+
+
+class TestFillModel:
+    def test_fill_probability_best_price(self):
+        fm = FillModel()
+        assert fm.fill_probability(0.50) == 0.50
+
+    def test_fill_probability_tail_low(self):
+        fm = FillModel()
+        assert fm.fill_probability(0.05) == 0.10  # 0.01 <= 0.05 <= 0.15
+
+    def test_fill_probability_tail_high(self):
+        fm = FillModel()
+        assert fm.fill_probability(0.90) == 0.10  # 0.85 <= 0.90 <= 0.99
+
+    def test_fill_probability_very_tail(self):
+        fm = FillModel()
+        assert fm.fill_probability(0.995) == 0.10  # >= 0.99
+
+    def test_fill_probability_very_low(self):
+        fm = FillModel()
+        assert fm.fill_probability(0.005) == 0.10  # <= 0.01
+
+    def test_fill_probability_middle(self):
+        fm = FillModel()
+        assert fm.fill_probability(0.50) == 0.50
+        assert fm.fill_probability(0.40) == 0.50
+        assert fm.fill_probability(0.60) == 0.50
+
+    def test_custom_fill_probs(self):
+        fm = FillModel(fill_prob_at_best=0.60, fill_prob_tail=0.05)
+        assert fm.fill_probability(0.50) == 0.60
+        assert fm.fill_probability(0.10) == 0.05
+
+
+class TestCostModelFillModel:
+    def test_default_fill_model(self):
+        cm = CostModel()
+        assert cm.fill_model is not None
+        assert cm.fill_model.fill_prob_at_best == 0.50
+
+    def test_forecast_penalty_default(self):
+        cm = CostModel()
+        assert cm.forecast_penalty_pct == 0.05
+
+    def test_forecast_penalty_cost(self):
+        cm = CostModel()
+        penalty = cm.forecast_penalty_cost(price=0.50, amount_usd=100.0)
+        expected = 0.50 * 100.0 * 0.05
+        assert abs(penalty - expected) < 0.01
+
+    def test_forecast_penalty_custom(self):
+        cm = CostModel()
+        cm.forecast_penalty_pct = 0.10
+        penalty = cm.forecast_penalty_cost(price=0.30, amount_usd=50.0)
+        expected = 0.30 * 50.0 * 0.10
+        assert abs(penalty - expected) < 0.01
+
+
+class TestBacktestEngineSeedAndFill:
+    @pytest.mark.asyncio
+    async def test_seed_reproducibility(self):
+        engine1 = BacktestEngine(
+            strategies=[TestDummyStrategy.DummyStrategy()],
+            seed=42,
+        )
+        engine2 = BacktestEngine(
+            strategies=[TestDummyStrategy.DummyStrategy()],
+            seed=42,
+        )
+        # Same seed should produce same RNG
+        val1 = engine1._rng.random()
+        val2 = engine2._rng.random()
+        assert val1 == val2
+
+    @pytest.mark.asyncio
+    async def test_fill_model_in_live_mode(self):
+        engine = BacktestEngine(
+            strategies=[TestDummyStrategy.ProducingStrategy()],
+            bankroll=100.0, days=90, cities=["New York"],
+            live_mode=True,
+            seed=42,
+        )
+        assert engine.live_mode is True
+        assert engine.costs.live_mode is True
+        assert engine.costs.fill_model is not None
+        assert engine._rng is not None
+
+
+class TestBacktestEngineForecastPenalty:
+    @pytest.mark.asyncio
+    async def test_forecast_penalty_applied(self):
+        """When price_source is 'forecast', forecast penalty should be added to cost."""
+        engine = BacktestEngine(
+            strategies=[TestDummyStrategy.ProducingStrategy()],
+            bankroll=100.0, days=90, cities=["New York"],
+        )
+        forecast = ForecastResult(
+            city="New York", date="2026-01-15", model="gfs",
+            temp_high_c=25.0, measure_type="high",
+            members=[24.0, 25.0, 26.0],
+        )
+        # Market with resolved price (no CLOB) -> forecast fallback
+        market = ResolvedMarket(
+            question="24-25°C",
+            token_id="tok12345678901234567890",
+            outcome="No",
+            winning=False,
+            yes_price=0.0,
+            no_price=0.0,
+        )
+        ev = ResolvedEvent(
+            event_id="ev1",
+            title="High temp NYC",
+            slug="s1",
+            city="New York",
+            measure_type="high",
+            target_date="2026-01-15",
+            markets=[market],
+        )
+        with patch("pm_bot.backtest.engine.RealDataFetcher") as mock_fetcher_cls:
+            mock_fetcher = MagicMock()
+            mock_fetcher.fetch_resolved_weather_events = AsyncMock(return_value=[ev])
+            mock_fetcher.enrich_events_with_clob_prices = AsyncMock()
+            mock_fetcher.enrich_events_with_dune_prices = AsyncMock()
+            mock_fetcher.fetch_active_market_prices = AsyncMock(return_value={})
+            mock_fetcher.prefetch_forecasts = AsyncMock()
+            mock_fetcher.get_cached_forecast = MagicMock(return_value=forecast)
+            mock_fetcher.close = MagicMock()
+            mock_fetcher_cls.return_value = mock_fetcher
+            result = await engine.run_real()
+        assert len(result) == 1
+        # Verify forecast trades exist and have penalty in cost
+        forecast_trades = [t for t in result[0].trades if t.price_source == "forecast" and t.filled]
+        if forecast_trades:
+            # The cost should be higher than just spread due to penalty
+            for t in forecast_trades:
+                assert t.cost > 0

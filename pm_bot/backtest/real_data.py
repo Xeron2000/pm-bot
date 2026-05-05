@@ -84,6 +84,7 @@ class ResolvedMarket:
     yes_price: float = 0.0
     no_price: float = 0.0
     price_history: list[PricePoint] = field(default_factory=list)
+    price_source: str = ""  # "clob", "dune", "gamma_active", or "forecast"
 
 
 @dataclass
@@ -113,8 +114,9 @@ CREATE TABLE IF NOT EXISTS bt_price_history (
     token_id TEXT NOT NULL,
     ts REAL NOT NULL,
     price REAL NOT NULL,
+    source TEXT NOT NULL DEFAULT 'clob',
     fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
-    PRIMARY KEY (token_id, ts)
+    PRIMARY KEY (token_id, ts, source)
 );
 
 CREATE TABLE IF NOT EXISTS bt_previous_forecasts (
@@ -508,12 +510,14 @@ class RealDataFetcher:
                     if 0.01 <= cached <= 0.99:
                         m.yes_price = cached
                         m.no_price = 1.0 - cached
+                        m.price_source = "clob"
                     return
 
                 price = await self.fetch_clob_price_at(client, m.token_id, target_ts, fidelity=60)
                 if price is not None and 0.01 <= price <= 0.99:
                     m.yes_price = price
                     m.no_price = 1.0 - price
+                    m.price_source = "clob"
 
         for ev in events:
             for m in ev.markets:
@@ -534,6 +538,141 @@ class RealDataFetcher:
         except Exception:
             pass
         return None
+
+    def _get_cached_dune_price(self, token_id: str, target_ts: float, tolerance_s: float = 7200.0) -> float | None:
+        """Try to get a cached Dune price within tolerance of target_ts."""
+        try:
+            row = self._get_conn().execute(
+                "SELECT ts, price FROM bt_price_history WHERE token_id = ? AND source = 'dune' AND ABS(ts - ?) <= ? ORDER BY ABS(ts - ?) LIMIT 1",
+                (token_id, target_ts, tolerance_s, target_ts),
+            ).fetchone()
+            if row:
+                return float(row[1])
+        except Exception:
+            pass
+        return None
+
+    async def fetch_dune_prices(
+        self,
+        client: httpx.AsyncClient,
+        condition_id: str,
+        hours_before: int = 24,
+        dune_api_key: str = "",
+    ) -> dict[str, float]:
+        """Fetch hourly prices from Dune Analytics for a given condition_id.
+
+        Queries the polymarket_polygon.market_prices_hourly table.
+        Returns {token_id: price} mapping for the closest hour to settlement.
+
+        Dune API docs: https://docs.dune.com/api-reference/
+        """
+        if not dune_api_key:
+            return {}
+
+        dune_url = "https://api.dune.com/api/v1/query/4829597/results"
+        headers = {"X-DUNE-API-KEY": dune_api_key}
+
+        # Query for prices near settlement time
+        params: dict[str, str | int] = {
+            "filters": f"condition_id='{condition_id}'",
+            "limit": 100,
+        }
+
+        try:
+            await self._limiter.wait()
+            resp = await client.get(dune_url, params=params, headers=headers, timeout=30.0)
+            if resp.status_code == 429:
+                log.warning("dune_rate_limited", condition_id=condition_id)
+                return {}
+            resp.raise_for_status()
+            data = resp.json()
+        except httpx.HTTPError as e:
+            log.warning("dune_fetch_failed", condition_id=condition_id, error=str(e))
+            return {}
+
+        rows = data.get("result", {}).get("rows", [])
+        if not rows:
+            return {}
+
+        result: dict[str, float] = {}
+        conn = self._get_conn()
+
+        for row in rows:
+            token_id = row.get("token_id", "")
+            price = row.get("price")
+            hour_ts = row.get("hour")
+            if not token_id or price is None:
+                continue
+
+            price_f = float(price)
+            ts_f = float(hour_ts) if hour_ts else 0.0
+
+            if not (0.01 <= price_f <= 0.99):
+                continue
+
+            result[token_id] = price_f
+
+            try:
+                conn.execute(
+                    "INSERT OR IGNORE INTO bt_price_history (token_id, ts, price, source) VALUES (?, ?, ?, 'dune')",
+                    (token_id, ts_f, price_f),
+                )
+            except sqlite3.Error:
+                pass
+
+        conn.commit()
+        log.info("dune_prices_fetched", condition_id=condition_id, count=len(result))
+        return result
+
+    async def enrich_events_with_dune_prices(
+        self,
+        client: httpx.AsyncClient,
+        events: list[ResolvedEvent],
+        dune_api_key: str = "",
+        hours_before_settlement: float = 24.0,
+    ) -> None:
+        """Enrich ResolvedEvent markets with Dune hourly prices.
+
+        Only fills in markets that still have 0/1 prices (i.e. no CLOB data).
+        Priority: CLOB T-24h → Dune hourly → Gamma active → forecast.
+        """
+        import asyncio
+
+        if not dune_api_key:
+            return
+
+        sem = asyncio.Semaphore(5)
+        tasks: list[asyncio.Task] = []
+
+        async def _fetch_one(ev: ResolvedEvent) -> None:
+            async with sem:
+                # Find condition_id from markets (use first market's token_id prefix or event metadata)
+                # Dune uses condition_id which maps to event, not individual tokens
+                condition_id = ev.event_id  # fallback
+                prices = await self.fetch_dune_prices(
+                    client, condition_id, hours_before=int(hours_before_settlement),
+                    dune_api_key=dune_api_key,
+                )
+                for m in ev.markets:
+                    if m.yes_price > 0.005 and m.yes_price < 0.995:
+                        continue  # Already has CLOB price
+                    dune_price = prices.get(m.token_id)
+                    if dune_price is not None and 0.01 <= dune_price <= 0.99:
+                        m.yes_price = dune_price
+                        m.no_price = 1.0 - dune_price
+                        m.price_source = "dune"
+
+        for ev in events:
+            # Only fetch Dune prices for events with markets missing CLOB data
+            needs_dune = any(
+                not (m.yes_price > 0.005 and m.yes_price < 0.995)
+                for m in ev.markets
+            )
+            if needs_dune:
+                tasks.append(asyncio.create_task(_fetch_one(ev)))
+
+        if tasks:
+            await asyncio.gather(*tasks)
 
     def _parse_resolved_market(self, m: dict) -> ResolvedMarket | None:
         """Parse a single market (bucket) from Gamma /markets endpoint.

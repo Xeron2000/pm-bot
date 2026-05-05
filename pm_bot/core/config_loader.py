@@ -74,3 +74,9 @@ def get_station_for_city(config: dict, city: str) -> dict[str, str | float] | No
         if info.get("city", "").lower() == city.lower():
             return {"icao": icao, **info}
     return None
+
+
+def get_dune_api_key(config: dict) -> str:
+    """Get Dune Analytics API key from config or environment."""
+    dune = config.get("dune", {})
+    return str(os.environ.get("DUNE_API_KEY", dune.get("api_key", "")))

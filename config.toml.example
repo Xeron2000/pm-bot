@@ -53,6 +53,9 @@ webhook_url = ""
 bot_token = ""
 chat_id = ""
 
+[dune]
+api_key = ""
+
 [stations.KLGA]
 name = "LaGuardia Airport"
 lat = 40.7772
