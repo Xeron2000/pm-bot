@@ -78,8 +78,14 @@ class TradingDaemon:
             os.environ.get("PM_BOT_HEARTBEAT", daemon_cfg.get("heartbeat_path", str(HEARTBEAT_FILE)))
         ).expanduser()
 
+        from pm_bot.core.risk import RiskDB
+        risk_db: RiskDB
+        if dry_run and self.paper is not None:
+            risk_db = self.paper
+        else:
+            risk_db = self.db
         self.risk_manager = RiskManager(
-            db=self.db,
+            db=risk_db,
             bankroll=self.bankroll,
             circuit_breaker_l1=float(risk_cfg.get("circuit_breaker_l1", 0.05)),
             circuit_breaker_l2=float(risk_cfg.get("circuit_breaker_l2", 0.10)),

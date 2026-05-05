@@ -1,12 +1,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol, runtime_checkable
 
 import structlog
 
-from pm_bot.core.db import TradeDB
-
 log = structlog.get_logger()
+
+
+@runtime_checkable
+class RiskDB(Protocol):
+    def get_daily_pnl(self) -> float: ...
+    def get_consecutive_losses(self) -> int: ...
+    def get_state(self, key: str) -> str | None: ...
+    def set_state(self, key: str, value: str) -> None: ...
+    def get_daily_spent(self) -> float: ...
+    def get_city_spent(self, city: str) -> float: ...
+    def get_total_exposure(self) -> float: ...
 
 
 @dataclass
@@ -20,7 +30,7 @@ class RiskCheckResult:
 class RiskManager:
     def __init__(
         self,
-        db: TradeDB,
+        db: RiskDB,
         bankroll: float = 500.0,
         circuit_breaker_l1: float = 0.05,
         circuit_breaker_l2: float = 0.10,

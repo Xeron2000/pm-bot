@@ -136,6 +136,9 @@ class PaperTradeDB:
         )
         conn.commit()
 
+    def get_daily_spent(self) -> float:
+        return self.daily_spent
+
     def get_city_spent(self, city: str) -> float:
         conn = self._get_conn()
         today = _utc_today()
@@ -314,6 +317,44 @@ class PaperTradeDB:
 
     def reset_daily(self) -> None:
         self.daily_spent = 0.0
+
+    def get_daily_pnl(self) -> float:
+        conn = self._get_conn()
+        today = _utc_today()
+        row = conn.execute(
+            """SELECT COALESCE(SUM(settled_pnl), 0) FROM paper_trades
+               WHERE date(settled_at) = ? AND status = 'settled'""",
+            (today,),
+        ).fetchone()
+        return float(row[0]) if row else 0.0
+
+    def get_consecutive_losses(self) -> int:
+        conn = self._get_conn()
+        rows = conn.execute(
+            """SELECT settled_pnl FROM paper_trades
+               WHERE status = 'settled' AND settled_pnl IS NOT NULL
+               ORDER BY settled_at DESC LIMIT 20"""
+        ).fetchall()
+        count = 0
+        for r in rows:
+            if r[0] < 0:
+                count += 1
+            else:
+                break
+        return count
+
+    def get_state(self, key: str, default: str = "") -> str:
+        conn = self._get_conn()
+        row = conn.execute("SELECT value FROM paper_state WHERE key = ?", (key,)).fetchone()
+        return str(row[0]) if row else default
+
+    def set_state(self, key: str, value: str) -> None:
+        conn = self._get_conn()
+        conn.execute(
+            "INSERT OR REPLACE INTO paper_state (key, value, updated_at) VALUES (?, ?, ?)",
+            (key, value, _utc_now()),
+        )
+        conn.commit()
 
     def close(self) -> None:
         if self._conn:
