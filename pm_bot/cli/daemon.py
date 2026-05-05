@@ -73,6 +73,9 @@ class TradingDaemon:
         self.max_daily = float(os.environ.get("PM_BOT_MAX_DAILY", sizing.get("max_daily", 200.0)))
         self.max_per_city = float(os.environ.get("PM_BOT_MAX_PER_CITY", sizing.get("max_per_city", 100.0)))
         self.max_total_pct = float(os.environ.get("PM_BOT_MAX_TOTAL_PCT", sizing.get("max_total_pct", 0.30)))
+        self.max_single = min(self.max_single, self.bankroll * 0.15)
+        self.max_daily = min(self.max_daily, self.bankroll * 0.50)
+        self.max_per_city = min(self.max_per_city, self.bankroll * 0.25)
         self.scan_interval = int(daemon_cfg.get("scan_interval", 300))
         self.heartbeat_path = Path(
             os.environ.get("PM_BOT_HEARTBEAT", daemon_cfg.get("heartbeat_path", str(HEARTBEAT_FILE)))
