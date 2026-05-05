@@ -275,3 +275,36 @@ Found and fixed °F-related bugs: bucket_probability_numpy floor truncation in �
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: New strategies, auto-settle, 90% test coverage
+
+**Date**: 2026-05-05
+**Task**: New strategies, auto-settle, 90% test coverage
+**Branch**: `main`
+
+### Summary
+
+Implemented neg_risk_field_fade (+1754%/90d, ΣYES>1.02 over-round exploitation), station_bias kalman filter, auto-settle with poly-web3 (redeem/merge for compound reinvestment). Deleted metar_lock (-710% look-ahead bias) and mean_reversion (0 trades). Built test suite from scratch: 947 tests, 90% coverage across 51 test files. 60 files changed, +9821 lines.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b826652` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
