@@ -17,7 +17,7 @@ app.add_typer(daemon_app, name="daemon")
 
 @app.command()
 def scan(
-    strategy: str = typer.Option("all", "--strategy", "-s", help="Strategy: all, gopfan2, resolution_div, neg_risk_sum, truncation_edge, ensemble_spread"),
+    strategy: str = typer.Option("all", "--strategy", "-s", help="Strategy: all, gopfan2, resolution_div, neg_risk_sum, truncation_edge, ensemble_spread, neg_risk_field_fade"),
     cities: Optional[str] = typer.Option(None, "--cities", "-c", help="Comma-separated cities (e.g. NYC,HK,MIA)"),
     all_cities: bool = typer.Option(False, "--all", help="Scan all available cities"),
     edge: Optional[float] = typer.Option(None, "--edge", "-e", help="Override minimum edge threshold"),
@@ -112,6 +112,18 @@ def trade(
         observed=observed,
         debug=debug,
     ))
+
+
+@app.command()
+def settle(
+    all_positions: bool = typer.Option(False, "--all", help="Redeem all redeemable positions"),
+    condition_ids: Optional[str] = typer.Option(None, "--ids", help="Comma-separated condition IDs to redeem"),
+    list_only: bool = typer.Option(False, "--list", help="List redeemable positions without redeeming"),
+    debug: bool = typer.Option(False, "--debug", "-d", help="Enable debug logging"),
+):
+    """Redeem winning positions from resolved markets (V2 auto-settle)."""
+    from pm_bot.cli.settle import run_settle
+    run_settle(all_positions=all_positions, condition_ids_str=condition_ids, list_only=list_only, debug=debug)
 
 
 @app.command()

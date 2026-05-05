@@ -100,6 +100,18 @@ class BacktestEngine:
                         event = self._build_synthetic_event(city, date_str, forecast)
                         kwargs: dict = {"forecast": forecast, "bankroll": current_bankroll}
 
+                        if obs_temp is not None:
+                            from pm_bot.core.observation import ObservedTemp
+                            obs_obj = ObservedTemp(
+                                city=city,
+                                observed_c=obs_temp,
+                                obs_time_utc=datetime.now(timezone.utc),
+                                local_time=datetime.now(timezone.utc),
+                                is_past_cutoff=True,
+                                measure_type=forecast.measure_type,
+                            )
+                            kwargs["observation"] = obs_obj
+
                         recs = strat.run(event, **kwargs)
 
                         for rec in recs:
@@ -215,6 +227,20 @@ class BacktestEngine:
                         continue
 
                     kwargs: dict = {"forecast": forecast, "bankroll": current_bankroll}
+
+                    resolved_temp = self._get_resolved_temp(ev)
+                    if resolved_temp is not None:
+                        from pm_bot.core.observation import ObservedTemp
+                        obs_obj = ObservedTemp(
+                            city=ev.city,
+                            observed_c=resolved_temp,
+                            obs_time_utc=datetime.now(timezone.utc),
+                            local_time=datetime.now(timezone.utc),
+                            is_past_cutoff=True,
+                            measure_type=forecast.measure_type,
+                        )
+                        kwargs["observation"] = obs_obj
+
                     recs = strat.run(event, **kwargs)
 
                     for rec in recs:
@@ -358,6 +384,29 @@ class BacktestEngine:
             if m.token_id == bucket.market_id:
                 return m.winning
         return False
+
+    def _get_resolved_temp(self, ev: ResolvedEvent) -> float | None:
+        """Extract resolved temperature from winning market title."""
+        for m in ev.markets:
+            if not m.winning:
+                continue
+            q = m.question
+            import re
+            match = re.search(r"(\d+)(?:\s*[-–]\s*(\d+))?\s*°([CF])", q)
+            if match:
+                low_str = match.group(1)
+                unit = match.group(3)
+                low = float(low_str)
+                if unit == "F":
+                    low = (low - 32) / 1.8
+                return low
+            match = re.search(r"above\s+(\d+)\s*°([CF])", q, re.IGNORECASE)
+            if match:
+                val = float(match.group(1))
+                if match.group(2) == "F":
+                    val = (val - 32) / 1.8
+                return val
+        return None
 
     def _build_synthetic_event(
         self,

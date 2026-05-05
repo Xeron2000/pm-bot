@@ -47,6 +47,7 @@ STRATEGY_DEFAULTS: dict[str, dict[str, float]] = {
     "neg_risk_sum": {"bankroll": 100.0},
     "truncation_edge": {"edge_min": 0.03},
     "ensemble_spread": {"edge_min": 0.05},
+    "neg_risk_field_fade": {"bankroll": 100.0},
 }
 
 CACHE_TTL: dict[str, int] = {

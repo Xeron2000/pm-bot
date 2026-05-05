@@ -16,6 +16,7 @@ CHAIN_ID = 137
 DEFAULT_HTTP_TIMEOUT = 15.0
 MAX_425_RETRIES = 3
 HEARTBEAT_RECOVERY_ATTEMPTS = 3
+GAMMA_POSITIONS_URL = "https://data-api.polymarket.com/positions"
 
 
 def compute_v2_taker_fee(fee_rate_bps: int, price: float, exponent: float = 1.0) -> float:
@@ -340,3 +341,93 @@ class ClobTrader:
         pk = get_private_key()
         creds = get_clob_creds(self._config)
         return bool(pk and creds["api_key"])
+
+    def get_redeemable_positions(self) -> list[dict]:
+        pk = get_private_key()
+        if not pk:
+            return []
+        try:
+            from web3 import Web3
+            wallet = Web3().eth.account.from_key(pk).address
+        except Exception:
+            return []
+        try:
+            resp = httpx.get(
+                GAMMA_POSITIONS_URL,
+                params={"user": wallet, "redeemable": "true"},
+                timeout=DEFAULT_HTTP_TIMEOUT,
+            )
+            resp.raise_for_status()
+            positions = resp.json()
+            return positions if isinstance(positions, list) else []
+        except Exception as e:
+            log.error("fetch_redeemable_failed", error=str(e))
+            return []
+
+    def settle_resolved(self, condition_ids: list[str] | None = None) -> dict:
+        pk = get_private_key()
+        if not pk:
+            log.error("settle_no_key")
+            return {"redeemed": 0, "errors": ["no private key"]}
+
+        try:
+            from poly_web3 import PolyWeb3Service
+        except ImportError:
+            log.error("poly_web3_not_installed")
+            return {"redeemed": 0, "errors": ["poly-web3 not installed"]}
+
+        client = self._get_client()
+        relayer = None
+        try:
+            from py_builder_relayer_client import RelayClient
+            relayer = RelayClient()
+        except Exception:
+            pass
+
+        try:
+            svc = PolyWeb3Service(clob_client=client, relayer_client=relayer)
+        except Exception as e:
+            log.error("web3_service_init_failed", error=str(e))
+            return {"redeemed": 0, "errors": [str(e)]}
+
+        if condition_ids:
+            try:
+                result = svc.redeem(condition_ids=condition_ids)
+                redeemed = len(result.success) if hasattr(result, "success") else 0
+                errors = [str(e) for e in result.errors] if hasattr(result, "errors") else []
+                log.info("settle_specific", condition_ids=condition_ids, redeemed=redeemed)
+                return {"redeemed": redeemed, "errors": errors}
+            except Exception as e:
+                log.error("settle_specific_failed", error=str(e))
+                return {"redeemed": 0, "errors": [str(e)]}
+        else:
+            try:
+                result = svc.redeem_all()
+                redeemed = len(result.success) if hasattr(result, "success") else 0
+                errors = [str(e) for e in result.errors] if hasattr(result, "errors") else []
+                log.info("settle_all", redeemed=redeemed)
+                return {"redeemed": redeemed, "errors": errors}
+            except Exception as e:
+                log.error("settle_all_failed", error=str(e))
+                return {"redeemed": 0, "errors": [str(e)]}
+
+    def merge_positions(self, condition_id: str, amount: float) -> dict | None:
+        pk = get_private_key()
+        if not pk:
+            log.error("merge_no_key")
+            return None
+
+        try:
+            from poly_web3 import PolyWeb3Service
+            client = self._get_client()
+            relayer = None
+            try:
+                from py_builder_relayer_client import RelayClient
+                relayer = RelayClient()
+            except Exception:
+                pass
+            svc = PolyWeb3Service(clob_client=client, relayer_client=relayer)
+            return svc.merge(condition_id, amount)  # type: ignore[no-any-return]
+        except Exception as e:
+            log.error("merge_failed", condition_id=condition_id, error=str(e))
+            return None

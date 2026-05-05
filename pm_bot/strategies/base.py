@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 from pm_bot.models.market import Recommendation, WeatherEvent, ForecastResult
-from pm_bot.models.config import STRATEGY_DEFAULTS
 
 
 class Strategy:
     name: str = "base"
 
-    def run(self, event: WeatherEvent, **kwargs) -> list[Recommendation]:
-        raise NotImplementedError
+    @property
+    def supports_backtest(self) -> bool:
+        return True
 
     def get_defaults(self) -> dict[str, float]:
+        from pm_bot.models.config import STRATEGY_DEFAULTS
         return STRATEGY_DEFAULTS.get(self.name, {})
+
+    def run(self, event: WeatherEvent, **kwargs) -> list[Recommendation]:
+        return []
 
 
 class Gopfan2Strategy(Strategy):
@@ -76,6 +80,7 @@ def get_all_strategies() -> dict[str, Strategy]:
         from pm_bot.strategies.neg_risk_sum import NegRiskSumStrategy
         from pm_bot.strategies.truncation_edge import TruncationEdgeStrategy
         from pm_bot.strategies.ensemble_spread import EnsembleSpreadStrategy
+        from pm_bot.strategies.neg_risk_field_fade import NegRiskFieldFadeStrategy
 
         _all_strategies = {
             "gopfan2": Gopfan2Strategy(),
@@ -83,6 +88,7 @@ def get_all_strategies() -> dict[str, Strategy]:
             "neg_risk_sum": NegRiskSumStrategy(),
             "truncation_edge": TruncationEdgeStrategy(),
             "ensemble_spread": EnsembleSpreadStrategy(),
+            "neg_risk_field_fade": NegRiskFieldFadeStrategy(),
         }
     return _all_strategies
 

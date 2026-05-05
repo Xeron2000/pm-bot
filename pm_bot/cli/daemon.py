@@ -241,6 +241,32 @@ class TradingDaemon:
                     break
                 await self._execute_trade(rec)
 
+            await self._auto_settle()
+
+    async def _auto_settle(self) -> None:
+        if not self.trader.is_configured():
+            return
+        try:
+            positions = self.trader.get_redeemable_positions()
+            if not positions:
+                return
+            condition_ids = list({str(p["conditionId"]) for p in positions if p.get("conditionId")})
+            if not condition_ids:
+                return
+            log.info("auto_settle_start", redeemable=len(positions))
+            result = self.trader.settle_resolved(condition_ids=condition_ids)
+            redeemed = result.get("redeemed", 0)
+            if redeemed > 0:
+                total_redeemed = sum(float(p.get("size", 0)) for p in positions[:redeemed])
+                self.bankroll += total_redeemed
+                log.info("auto_settle_complete", redeemed=redeemed, bankroll=self.bankroll)
+                await self._send_notification(
+                    f"💰 Auto-settled {redeemed} position(s), bankroll: ${self.bankroll:.2f}",
+                    "auto_settle",
+                )
+        except Exception as e:
+            log.warning("auto_settle_failed", error=str(e))
+
     async def _execute_trade(self, rec: Recommendation) -> None:
         bucket = rec.bucket
         price = rec.price
