@@ -43,12 +43,18 @@ CONFIG_RELOAD_FLAG = Path.home() / ".pm-bot" / ".reload_config"
 
 
 class TradingDaemon:
-    def __init__(self, config: dict) -> None:
+    def __init__(self, config: dict, dry_run: bool = False, strategy_names: list[str] | None = None) -> None:
         self.config = config
+        self.dry_run = dry_run
         self.db = TradeDB()
         sizing = get_sizing(config)
         risk_cfg = config.get("risk", {})
         daemon_cfg = config.get("daemon", {})
+
+        if strategy_names:
+            self.strategies = {k: v for k, v in ALL_STRATEGIES.items() if k in strategy_names}
+        else:
+            self.strategies = ALL_STRATEGIES
 
         self.trader = ClobTrader(config)
         self.bankroll = float(os.environ.get("PM_BOT_BANKROLL", sizing.get("bankroll", 500.0)))
@@ -95,11 +101,14 @@ class TradingDaemon:
         await self._send_notification("🟢 PM-Bot daemon started", "daemon_start")
 
         if not self.trader.is_configured():
-            log.error("trader_not_configured")
-            await self._send_notification("🔴 PM-Bot daemon: trading credentials not configured", "daemon_error")
-            return
+            if not self.dry_run:
+                log.error("trader_not_configured")
+                await self._send_notification("🔴 PM-Bot daemon: trading credentials not configured", "daemon_error")
+                return
+            log.warning("trader_not_configured_dry_run", msg="Running in dry-run mode without credentials")
 
-        self.trader.start_heartbeat()
+        if not self.dry_run:
+            self.trader.start_heartbeat()
 
         try:
             self._recover_state()
@@ -152,7 +161,7 @@ class TradingDaemon:
 
             all_recs: list[Recommendation] = []
             for ev in events:
-                for strat_name, strat in ALL_STRATEGIES.items():
+                for strat_name, strat in self.strategies.items():
                     kwargs: dict[str, Any] = {}
                     for k, v in STRATEGY_DEFAULTS.get(strat_name, {}).items():
                         kwargs[k] = v
@@ -246,7 +255,7 @@ class TradingDaemon:
             await self._auto_settle()
 
     async def _auto_settle(self) -> None:
-        if not self.trader.is_configured():
+        if self.dry_run or not self.trader.is_configured():
             return
         try:
             positions = self.trader.get_redeemable_positions()
@@ -278,6 +287,33 @@ class TradingDaemon:
             return
 
         size_shares = size_usd / price if price > 0 else 1
+
+        if self.dry_run:
+            self.db.record_trade(
+                order_id=f"DRY-{self.cycle_count}-{self.trades_this_cycle}",
+                market_id=bucket.market_id,
+                side=rec.direction,
+                price=price,
+                amount_usd=size_usd,
+                strategy=rec.strategy,
+                edge=rec.edge,
+                city=rec.city,
+                temp_label=rec.temp_label,
+                kelly_fraction_val=rec.kelly_fraction,
+                reasoning=rec.reasoning,
+            )
+            self.trades_this_cycle += 1
+            log.info(
+                "dry_run_trade",
+                strategy=rec.strategy,
+                city=rec.city,
+                direction=rec.direction,
+                temp_label=rec.temp_label,
+                price=price,
+                size_usd=size_usd,
+                edge=rec.edge,
+            )
+            return
 
         if rec.direction == "YES":
             result = self.trader.place_limit_buy(
@@ -365,8 +401,9 @@ class TradingDaemon:
         log.info("graceful_shutdown_start")
 
         try:
-            self.trader.cancel_all_orders()
-            log.info("all_orders_cancelled")
+            if not self.dry_run:
+                self.trader.cancel_all_orders()
+                log.info("all_orders_cancelled")
         except Exception as e:
             log.error("cancel_all_failed", error=str(e))
 
@@ -383,7 +420,8 @@ class TradingDaemon:
             except asyncio.TimeoutError:
                 log.warning("pending_fill_timeout")
 
-        self.trader.stop_heartbeat()
+        if not self.dry_run:
+            self.trader.stop_heartbeat()
 
         self._update_daily_state()
 
@@ -608,7 +646,7 @@ def _estimate_hours_to_resolution(date_str: str) -> float | None:
         return None
 
 
-async def daemon_start(debug: bool = False) -> None:
+async def daemon_start(debug: bool = False, dry_run: bool = False, strategy_names: list[str] | None = None) -> None:
     _setup_logging(debug)
 
     if _is_daemon_running():
@@ -617,13 +655,18 @@ async def daemon_start(debug: bool = False) -> None:
         return
 
     config = load_config()
-    daemon = TradingDaemon(config)
+    daemon = TradingDaemon(config, dry_run=dry_run, strategy_names=strategy_names)
 
-    if not daemon.trader.is_configured():
+    if not daemon.trader.is_configured() and not dry_run:
         console.print("[red]Trading credentials not configured. Set POLY_PK and [clob] in config.toml[/red]")
         return
 
-    console.print("[bold green]Starting PM-Bot daemon...[/bold green]")
+    if dry_run:
+        console.print("[bold yellow]Starting PM-Bot daemon in DRY-RUN mode (no orders will be placed)[/bold yellow]")
+        if strategy_names:
+            console.print(f"[dim]Strategies: {', '.join(strategy_names)}[/dim]")
+    else:
+        console.print("[bold green]Starting PM-Bot daemon...[/bold green]")
     await daemon.run()
 
 

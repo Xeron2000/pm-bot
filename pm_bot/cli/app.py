@@ -166,11 +166,26 @@ def config(
 @daemon_app.command("start")
 def daemon_start_cmd(
     debug: bool = typer.Option(False, "--debug", "-d", help="Enable debug logging"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Dry-run mode: log signals without placing orders"),
+    strategies: Optional[str] = typer.Option(
+        None, "--strategies", "-s", help="Comma-separated strategy names (default: all)"
+    ),
+    kelly: Optional[float] = typer.Option(None, "--kelly", "-k", help="Kelly fraction override (e.g. 0.15)"),
+    stop_loss: Optional[float] = typer.Option(None, "--stop-loss", help="Stop-loss fraction override (e.g. 0.2)"),
 ):
     """Start the 24/7 automated trading daemon."""
     from pm_bot.cli.daemon import daemon_start
 
-    asyncio.run(daemon_start(debug=debug))
+    strat_names = [s.strip() for s in strategies.split(",") if s.strip()] if strategies else None
+
+    if kelly is not None or stop_loss is not None:
+        import os
+        if kelly is not None:
+            os.environ["PM_BOT_KELLY"] = str(kelly)
+        if stop_loss is not None:
+            os.environ.setdefault("PM_BOT_STOP_LOSS", str(stop_loss))
+
+    asyncio.run(daemon_start(debug=debug, dry_run=dry_run, strategy_names=strat_names))
 
 
 @daemon_app.command("stop")
