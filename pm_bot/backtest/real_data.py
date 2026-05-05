@@ -33,6 +33,52 @@ CLOB_PRICES_URL = "https://clob.polymarket.com/prices-history"
 
 _DEFAULT_STD_C = 2.5
 
+_ERA5_TMAX_BIAS_C: dict[str, float] = {
+    "New York": 1.0,
+    "London": 0.8,
+    "Denver": 1.2,
+    "Helsinki": 1.0,
+    "Paris": 1.0,
+    "Tokyo": 0.7,
+    "Chicago": 1.0,
+    "Austin": 1.2,
+    "Seoul": 0.8,
+    "Hong Kong": 0.5,
+    "Warsaw": 1.0,
+    "Lagos": 0.5,
+    "Taipei": 0.6,
+    "Miami": 0.6,
+    "Dallas": 1.2,
+    "Atlanta": 1.0,
+    "São Paulo": 0.5,
+    "Sao Paulo": 0.5,
+    "Buenos Aires": 0.8,
+    "Jeddah": 0.5,
+    "Ankara": 1.2,
+    "Shanghai": 0.8,
+}
+
+_SEASONAL_STD_FACTOR: dict[str, list[float]] = {
+    "New York":   [0.8, 0.7, 0.8, 1.0, 1.1, 1.2, 1.3, 1.3, 1.1, 1.0, 0.8, 0.7],
+    "London":     [0.7, 0.7, 0.7, 0.8, 0.9, 1.0, 1.0, 1.0, 0.9, 0.8, 0.7, 0.7],
+    "Tokyo":      [0.8, 0.8, 0.9, 1.0, 1.0, 1.1, 1.2, 1.3, 1.2, 1.0, 0.8, 0.7],
+    "Chicago":    [0.9, 0.8, 0.9, 1.1, 1.2, 1.3, 1.3, 1.2, 1.1, 1.0, 0.9, 0.8],
+    "Miami":      [0.9, 0.9, 1.0, 1.0, 1.1, 1.0, 1.0, 1.0, 1.1, 1.1, 1.0, 0.9],
+    "Seoul":      [0.8, 0.8, 0.9, 1.0, 1.0, 1.1, 1.3, 1.3, 1.1, 1.0, 0.8, 0.7],
+    "Hong Kong":  [1.0, 1.0, 1.1, 1.2, 1.2, 1.1, 1.1, 1.1, 1.1, 1.1, 1.0, 1.0],
+    "Lagos":      [0.9, 1.0, 1.1, 1.1, 1.0, 0.9, 0.9, 0.9, 0.9, 1.0, 1.0, 1.0],
+    "Paris":      [0.7, 0.7, 0.8, 0.9, 1.0, 1.1, 1.1, 1.1, 1.0, 0.8, 0.7, 0.7],
+    "Denver":     [0.9, 0.9, 1.1, 1.2, 1.3, 1.4, 1.3, 1.2, 1.1, 1.0, 0.9, 0.8],
+    "Helsinki":   [0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.1, 1.1, 1.0, 0.9, 0.7, 0.7],
+    "Warsaw":     [0.8, 0.8, 0.9, 1.0, 1.1, 1.2, 1.2, 1.2, 1.0, 0.9, 0.8, 0.7],
+    "Taipei":     [1.0, 1.0, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.1, 1.0, 1.0],
+    "Austin":     [0.8, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.3, 1.2, 1.0, 0.8, 0.7],
+    "Dallas":     [0.8, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.3, 1.2, 1.0, 0.8, 0.7],
+    "Atlanta":    [0.8, 0.8, 0.9, 1.0, 1.1, 1.2, 1.2, 1.2, 1.1, 1.0, 0.8, 0.8],
+}
+
+_ENSEMBLE_UNDERDISPERSION_FACTOR = 1.15
+
 _CITY_STD_C: dict[str, float] = {
     "New York": 2.5,
     "London": 2.0,
@@ -216,11 +262,27 @@ def _is_weather_title(title: str) -> bool:
     )
 
 
-def _synthesize_ensemble(center: float, city: str = "", n: int = 51) -> list[float]:
-    std = _CITY_STD_C.get(city, _DEFAULT_STD_C)
+def _synthesize_ensemble(
+    center: float,
+    city: str = "",
+    date_iso: str = "",
+    n: int = 51,
+) -> list[float]:
+    base_std = _CITY_STD_C.get(city, _DEFAULT_STD_C)
+
+    season_factor = 1.0
+    if city in _SEASONAL_STD_FACTOR and date_iso:
+        try:
+            month = int(date_iso[5:7])
+            season_factor = _SEASONAL_STD_FACTOR[city][month - 1]
+        except (ValueError, IndexError):
+            pass
+
+    std = base_std * season_factor * _ENSEMBLE_UNDERDISPERSION_FACTOR
+
     import hashlib
 
-    seed = int(hashlib.md5(f"{center}:{city}".encode()).hexdigest()[:8], 16)
+    seed = int(hashlib.md5(f"{center}:{city}:{date_iso}".encode()).hexdigest()[:8], 16)
     import random
 
     rng = random.Random(seed)
@@ -956,7 +1018,7 @@ class RealDataFetcher:
                         members.append(float(m_data[i]))
 
                 if not members:
-                    members = _synthesize_ensemble(float(temps[i]), city=canonical)
+                    members = _synthesize_ensemble(float(temps[i]), city=canonical, date_iso=t)
 
                 fr = ForecastResult(
                     city=canonical,
@@ -1173,6 +1235,10 @@ class RealDataFetcher:
 
         Returns {(city, date_iso): actual_max_temp_celsius}.
         Used for simulating settlement of active (unsettled) markets.
+
+        Applies ERA5 Tmax cold-bias correction per city (ERA5 systematically
+        underestimates daily max temperature vs airport ASOS stations that
+        Polymarket settles on). Bias values range from +0.5 to +1.2°C.
         """
         from pm_bot.models.config import CITY_COORDS
 
@@ -1212,8 +1278,10 @@ class RealDataFetcher:
 
             for t, temp in zip(times, temps):
                 if temp is not None:
+                    bias = _ERA5_TMAX_BIAS_C.get(city, 0.8)
+                    corrected = float(temp) + bias
                     key = f"{city}|{t}"
-                    result[key] = float(temp)
+                    result[key] = corrected
 
         log.info("actual_temps_fetched", cities=len(city_dates), dates_with_temp=len(result))
         return result

@@ -67,6 +67,8 @@ class BacktestEngine:
         live_mode: bool = False,
         seed: int | None = None,
         fill_model: FillModel | None = None,
+        preloaded_fetcher: RealDataFetcher | None = None,
+        preloaded_events: list | None = None,
     ) -> None:
         self.strategies = strategies
         self.bankroll = bankroll
@@ -80,6 +82,8 @@ class BacktestEngine:
         self.compound = compound
         self.live_mode = live_mode
         self.seed = seed
+        self._preloaded_fetcher = preloaded_fetcher
+        self._preloaded_events = preloaded_events
         if fill_model is not None:
             self.costs.fill_model = fill_model
         if live_mode:
@@ -201,6 +205,21 @@ class BacktestEngine:
 
         return results
 
+    async def _get_events_and_fetcher(self):
+        """Fetch events or use preloaded data. Returns (fetcher, all_events, client_or_none)."""
+        if self._preloaded_events is not None and self._preloaded_fetcher is not None:
+            fetcher = self._preloaded_fetcher
+            all_events = self._preloaded_events
+            if self.cities:
+                from pm_bot.models.config import resolve_city_alias
+                allowed = {resolve_city_alias(c) for c in self.cities}
+                all_events = [ev for ev in all_events if ev.city in allowed]
+            return fetcher, all_events, None
+
+        fetcher = RealDataFetcher()
+        client = httpx.AsyncClient(timeout=30.0)
+        return fetcher, None, client
+
     async def run_real(self) -> list[BacktestResult]:
         """Run backtest using real Polymarket resolved + active events + CLOB prices.
 
@@ -210,57 +229,55 @@ class BacktestEngine:
         actual temperatures to simulate settlement.
         P&L is computed against the actual resolution (or simulated for active).
         """
-        fetcher = RealDataFetcher()
+        fetcher, preloaded_events, client = await self._get_events_and_fetcher()
         results: list[BacktestResult] = []
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resolved_events = await fetcher.fetch_resolved_weather_events(client, days=self.days)
-            active_events = await fetcher.fetch_active_weather_events(client, days=self.days)
+        async with (client or httpx.AsyncClient(timeout=30.0)) as client_inner:
+            if preloaded_events is not None:
+                all_events = preloaded_events
+            else:
+                resolved_events = await fetcher.fetch_resolved_weather_events(client_inner, days=self.days)
+                active_events = await fetcher.fetch_active_weather_events(client_inner, days=self.days)
+                all_events = resolved_events + active_events
 
-            all_events = resolved_events + active_events
+                if not all_events:
+                    log.warning("no_events_found", days=self.days)
+                    fetcher.close()
+                    return []
 
-            if not all_events:
-                log.warning("no_events_found", days=self.days)
-                fetcher.close()
-                return []
+                if self.cities:
+                    from pm_bot.models.config import resolve_city_alias
+                    allowed = {resolve_city_alias(c) for c in self.cities}
+                    all_events = [ev for ev in all_events if ev.city in allowed]
 
-            if self.cities:
-                from pm_bot.models.config import resolve_city_alias
+                log.info(
+                    "events_count",
+                    resolved=len(resolved_events),
+                    active=len(active_events),
+                    total=len(all_events),
+                )
 
-                allowed = {resolve_city_alias(c) for c in self.cities}
-                all_events = [ev for ev in all_events if ev.city in allowed]
+                if all_events and all_events[0].markets:
+                    sample_m = all_events[0].markets[0]
+                    if len(sample_m.token_id) > 20:
+                        await fetcher.enrich_events_with_clob_prices(client_inner, all_events)
+                        from pm_bot.core.config_loader import load_config
+                        config = load_config()
+                        dune_key = config.get("dune", {}).get("api_key", "")
+                        if dune_key:
+                            await fetcher.enrich_events_with_dune_prices(client_inner, all_events, dune_key)
 
-            log.info(
-                "events_count",
-                resolved=len(resolved_events),
-                active=len(active_events),
-                total=len(all_events),
-            )
+                self._actual_temps: dict[str, float] = {}
+                if active_events:
+                    actual_temps = await fetcher.fetch_actual_temps(client_inner, active_events)
+                    self._actual_temps = actual_temps
+                    log.info("actual_temps_loaded", count=len(actual_temps))
 
-            if all_events and all_events[0].markets:
-                sample_m = all_events[0].markets[0]
-                if len(sample_m.token_id) > 20:
-                    await fetcher.enrich_events_with_clob_prices(client, all_events)
-                    from pm_bot.core.config_loader import load_config
+                active_prices = await fetcher.fetch_active_market_prices(client_inner)
+                self._active_price_cache = active_prices
 
-                    config = load_config()
-                    dune_key = config.get("dune", {}).get("api_key", "")
-                    if dune_key:
-                        await fetcher.enrich_events_with_dune_prices(client, all_events, dune_key)
-
-            # Fetch actual temps for active events (Open-Meteo archive API)
-            self._actual_temps: dict[str, float] = {}
-            if active_events:
-                actual_temps = await fetcher.fetch_actual_temps(client, active_events)
-                self._actual_temps = actual_temps
-                log.info("actual_temps_loaded", count=len(actual_temps))
-
-            # Cache active Gamma prices for fallback
-            active_prices = await fetcher.fetch_active_market_prices(client)
-            self._active_price_cache = active_prices
-
-            unique_cities = list({ev.city for ev in all_events})
-            await fetcher.prefetch_forecasts(client, unique_cities, self.days)
+                unique_cities = list({ev.city for ev in all_events})
+                await fetcher.prefetch_forecasts(client_inner, unique_cities, self.days)
 
             fill_count = 0
             skip_count = 0
@@ -417,7 +434,8 @@ class BacktestEngine:
         if self.live_mode:
             log.info("fill_model_stats", filled=fill_count, skipped=skip_count)
 
-        fetcher.close()
+        if self._preloaded_fetcher is None:
+            fetcher.close()
         return results
 
     async def run_portfolio(self) -> BacktestResult:
@@ -428,42 +446,42 @@ class BacktestEngine:
         capped by shared bankroll. This simulates running all strategies
         simultaneously with one account.
         """
-        fetcher = RealDataFetcher()
+        fetcher, preloaded_events, client = await self._get_events_and_fetcher()
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            resolved_events = await fetcher.fetch_resolved_weather_events(client, days=self.days)
-            active_events = await fetcher.fetch_active_weather_events(client, days=self.days)
+        async with (client or httpx.AsyncClient(timeout=30.0)) as client_inner:
+            if preloaded_events is not None:
+                all_events = preloaded_events
+            else:
+                resolved_events = await fetcher.fetch_resolved_weather_events(client_inner, days=self.days)
+                active_events = await fetcher.fetch_active_weather_events(client_inner, days=self.days)
+                all_events = resolved_events + active_events
 
-            all_events = resolved_events + active_events
+                if not all_events:
+                    log.warning("no_events_found", days=self.days)
+                    fetcher.close()
+                    return BacktestResult(
+                        strategy_name="portfolio", bankroll=self.bankroll, final_value=self.bankroll, total_pnl=0.0
+                    )
 
-            if not all_events:
-                log.warning("no_events_found", days=self.days)
-                fetcher.close()
-                return BacktestResult(
-                    strategy_name="portfolio", bankroll=self.bankroll, final_value=self.bankroll, total_pnl=0.0
-                )
+                if self.cities:
+                    from pm_bot.models.config import resolve_city_alias
+                    allowed = {resolve_city_alias(c) for c in self.cities}
+                    all_events = [ev for ev in all_events if ev.city in allowed]
 
-            if self.cities:
-                from pm_bot.models.config import resolve_city_alias
+                if all_events and all_events[0].markets:
+                    sample_m = all_events[0].markets[0]
+                    if len(sample_m.token_id) > 20:
+                        await fetcher.enrich_events_with_clob_prices(client_inner, all_events)
 
-                allowed = {resolve_city_alias(c) for c in self.cities}
-                all_events = [ev for ev in all_events if ev.city in allowed]
+                if active_events:
+                    actual_temps = await fetcher.fetch_actual_temps(client_inner, active_events)
+                    self._actual_temps = actual_temps
 
-            if all_events and all_events[0].markets:
-                sample_m = all_events[0].markets[0]
-                if len(sample_m.token_id) > 20:
-                    await fetcher.enrich_events_with_clob_prices(client, all_events)
+                active_prices = await fetcher.fetch_active_market_prices(client_inner)
+                self._active_price_cache = active_prices
 
-            # Fetch actual temps for active events
-            if active_events:
-                actual_temps = await fetcher.fetch_actual_temps(client, active_events)
-                self._actual_temps = actual_temps
-
-            active_prices = await fetcher.fetch_active_market_prices(client)
-            self._active_price_cache = active_prices
-
-            unique_cities = list({ev.city for ev in all_events})
-            await fetcher.prefetch_forecasts(client, unique_cities, self.days)
+                unique_cities = list({ev.city for ev in all_events})
+                await fetcher.prefetch_forecasts(client_inner, unique_cities, self.days)
 
             trades: list[SimulatedTrade] = []
             bankroll_series: list[float] = [self.bankroll]
@@ -634,7 +652,8 @@ class BacktestEngine:
             log.info("portfolio_fill_stats", filled=fill_count, skipped=skip_count)
 
         metrics = calculate_metrics(trades, bankroll_series)
-        fetcher.close()
+        if self._preloaded_fetcher is None:
+            fetcher.close()
 
         return BacktestResult(
             strategy_name="portfolio",
