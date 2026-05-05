@@ -17,6 +17,11 @@ CITY_COORDS: dict[str, tuple[float, float]] = {
     "Ankara": (40.1281, 32.9951),
     "Lagos": (6.5774, 3.3210),
     "São Paulo": (-23.4356, -46.4731),
+    "Warsaw": (52.1657, 20.9671),
+    "Taipei": (25.0796, 121.2340),
+    "Austin": (30.1945, -97.6699),
+    "Helsinki": (60.3172, 24.9635),
+    "Denver": (39.8617, -104.6732),
 }
 
 CITY_ALIASES: dict[str, str] = {

@@ -42,8 +42,10 @@ def kelly_size(
         return 0.0
     full_kelly = edge / payout_if_correct
     fraction_kelly = full_kelly * kelly_fraction_val
-    size_usd = bankroll * fraction_kelly
-    return min(size_usd, max_single)
+    wager = bankroll * fraction_kelly
+    wager = min(wager, max_single)
+    notional = wager / yes_price if yes_price > 0 else 0.0
+    return notional
 
 
 def compute_kelly_for_recommendation(

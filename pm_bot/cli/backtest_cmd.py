@@ -27,6 +27,10 @@ def backtest_run(
     cities: Optional[str] = typer.Option("NYC", "--cities", "-c", help="Comma-separated cities"),
     csv_path: Optional[str] = typer.Option(None, "--csv", help="Export results to CSV file"),
     real: bool = typer.Option(False, "--real", help="Use real Polymarket historical prices and resolved outcomes"),
+    stop_loss: float = typer.Option(0.0, "--stop-loss", help="Stop-loss as fraction of position (e.g. 0.5 = 50% stop-loss)"),
+    kelly: float = typer.Option(0.25, "--kelly", help="Kelly fraction (0.25=quarter, 0.5=half, 1.0=full)"),
+    max_pos: float = typer.Option(0.10, "--max-pos", help="Max single position as fraction of bankroll"),
+    no_compound: bool = typer.Option(False, "--no-compound", help="Disable compounding (fixed bankroll)"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ):
     """Run backtest against historical data."""
@@ -40,6 +44,10 @@ def backtest_run(
         cities_str=cities,
         csv_path=csv_path,
         real=real,
+        stop_loss=stop_loss,
+        kelly=kelly,
+        max_pos=max_pos,
+        no_compound=no_compound,
         debug=debug,
     ))
 
@@ -53,6 +61,10 @@ async def _run_backtest(
     cities_str: str | None,
     csv_path: str | None,
     real: bool,
+    stop_loss: float,
+    kelly: float,
+    max_pos: float,
+    no_compound: bool,
     debug: bool,
 ) -> None:
     _setup_logging(debug)
@@ -78,6 +90,10 @@ async def _run_backtest(
         days=days,
         costs=CostModel(),
         cities=city_list,
+        stop_loss_pct=stop_loss,
+        kelly_fraction_val=kelly,
+        max_single_pct=max_pos,
+        compound=not no_compound,
     )
 
     if real:

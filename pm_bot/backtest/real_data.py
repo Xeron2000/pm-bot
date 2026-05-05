@@ -119,6 +119,12 @@ CREATE TABLE IF NOT EXISTS bt_previous_forecasts (
     fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
     UNIQUE(city, date, model)
 );
+
+CREATE TABLE IF NOT EXISTS bt_active_prices (
+    token_id TEXT PRIMARY KEY,
+    yes_price REAL NOT NULL,
+    fetched_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 
@@ -245,8 +251,6 @@ def _parse_flexible_date(date_str: str, title: str = "") -> Any | None:
                             return dt.date()
                         except ValueError:
                             continue
-    return None
-
     return None
 
 
@@ -411,31 +415,48 @@ class RealDataFetcher:
     ) -> float | None:
         """Fetch CLOB market price closest to target_ts for a given token.
 
-        Returns the price at the closest available data point within
-        window_hours of target_ts, or None if unavailable.
+        Per GitHub issue #216, resolved markets require startTs/endTs
+        (not interval=max) and fidelity<=60 for data to be returned.
+        Chunked into 15-day windows to avoid "interval too long" errors.
         """
         window_s = int(window_hours * 3600)
         start_ts = max(0, int(target_ts - window_s))
         end_ts = int(target_ts + window_s)
 
-        data = await self._get_with_retry(
-            client,
-            CLOB_PRICES_URL,
-            params={
-                "market": token_id,
-                "startTs": start_ts,
-                "endTs": end_ts,
-                "fidelity": fidelity,
-            },
-        )
-        if not data or "history" not in data:
+        chunk_s = 15 * 86400
+        all_history: list[dict] = []
+
+        chunk_start = start_ts
+        while chunk_start < end_ts:
+            chunk_end = min(chunk_start + chunk_s, end_ts)
+            data = await self._get_with_retry(
+                client,
+                CLOB_PRICES_URL,
+                params={
+                    "market": token_id,
+                    "startTs": chunk_start,
+                    "endTs": chunk_end,
+                    "fidelity": fidelity,
+                },
+            )
+            if data and "history" in data and data["history"]:
+                all_history.extend(data["history"])
+            chunk_start = chunk_end
+
+        if not all_history:
             return None
 
-        history = data["history"]
-        if not history:
-            return None
+        for pt in all_history:
+            try:
+                self._get_conn().execute(
+                    "INSERT OR IGNORE INTO bt_price_history (token_id, ts, price) VALUES (?, ?, ?)",
+                    (token_id, pt["t"], float(pt["p"])),
+                )
+            except Exception:
+                pass
+        self._get_conn().commit()
 
-        closest = min(history, key=lambda p: abs(p["t"] - target_ts))
+        closest = min(all_history, key=lambda p: abs(p["t"] - target_ts))
         return float(closest["p"])
 
     async def enrich_events_with_clob_prices(
@@ -443,18 +464,28 @@ class RealDataFetcher:
         client: httpx.AsyncClient,
         events: list[ResolvedEvent],
         hours_before_settlement: float = 24.0,
+        max_concurrent: int = 10,
     ) -> None:
         """Enrich ResolvedEvent markets with CLOB T-24h prices.
 
         For each market's YES token, fetches the price at
         (settlement_time - hours_before_settlement). Falls back to
         forecast-derived probability if CLOB data unavailable.
-        """
-        for ev in events:
-            for m in ev.markets:
-                if not m.token_id or len(m.token_id) < 20:
-                    continue
 
+        Checks SQLite cache first; only fetches from API if not cached.
+        Uses concurrent requests for speed.
+        Per GitHub issue #216, fidelity=60 (1h) is required for
+        resolved markets; fidelity=120+ returns empty data.
+        """
+        import asyncio
+
+        sem = asyncio.Semaphore(max_concurrent)
+        tasks: list[asyncio.Task] = []
+
+        async def _fetch_one(ev: ResolvedEvent, m: ResolvedMarket) -> None:
+            async with sem:
+                if not m.token_id or len(m.token_id) < 20:
+                    return
                 raw_date = ev.target_date
                 try:
                     dt = datetime.strptime(raw_date, "%Y-%m-%d").replace(
@@ -462,13 +493,40 @@ class RealDataFetcher:
                         hour=12,
                     )
                 except ValueError:
-                    continue
-
+                    return
                 target_ts = dt.timestamp() - (hours_before_settlement * 3600)
-                price = await self.fetch_clob_price_at(client, m.token_id, target_ts)
+
+                cached = self._get_cached_clob_price(m.token_id, target_ts)
+                if cached is not None:
+                    if 0.01 <= cached <= 0.99:
+                        m.yes_price = cached
+                        m.no_price = 1.0 - cached
+                    return
+
+                price = await self.fetch_clob_price_at(client, m.token_id, target_ts, fidelity=60)
                 if price is not None and 0.01 <= price <= 0.99:
                     m.yes_price = price
                     m.no_price = 1.0 - price
+
+        for ev in events:
+            for m in ev.markets:
+                tasks.append(asyncio.create_task(_fetch_one(ev, m)))
+
+        if tasks:
+            await asyncio.gather(*tasks)
+
+    def _get_cached_clob_price(self, token_id: str, target_ts: float, tolerance_s: float = 3600.0) -> float | None:
+        """Try to get a cached CLOB price within tolerance of target_ts."""
+        try:
+            row = self._get_conn().execute(
+                "SELECT ts, price FROM bt_price_history WHERE token_id = ? AND ABS(ts - ?) <= ? ORDER BY ABS(ts - ?) LIMIT 1",
+                (token_id, target_ts, tolerance_s, target_ts),
+            ).fetchone()
+            if row:
+                return float(row[1])
+        except Exception:
+            pass
+        return None
 
     def _parse_resolved_market(self, m: dict) -> ResolvedMarket | None:
         """Parse a single market (bucket) from Gamma /markets endpoint.
@@ -533,6 +591,101 @@ class RealDataFetcher:
             yes_price=yes_price,
             no_price=no_price,
         )
+
+    async def fetch_active_market_prices(
+        self,
+        client: httpx.AsyncClient,
+        days: int = 30,
+    ) -> dict[str, float]:
+        """Fetch current Gamma outcomePrices for active (unsettled) weather markets.
+
+        For active markets, Gamma's outcomePrices reflect real market prices.
+        This is the most reliable source for backtest entry prices since
+        CLOB prices-history may return empty data for resolved markets.
+        Returns {token_id: yes_price} mapping.
+        """
+        result: dict[str, float] = {}
+        conn = self._get_conn()
+
+        for slug in WEATHER_SERIES_SLUGS:
+            page = 0
+            while True:
+                data = await self._get_with_retry(
+                    client,
+                    f"{GAMMA_BASE}/events",
+                    params={
+                        "series_slug": slug,
+                        "limit": 100,
+                        "order": "end_date",
+                        "ascending": False,
+                        "offset": page * 100,
+                    },
+                )
+                if not data or not isinstance(data, list):
+                    break
+
+                for ev in data:
+                    if ev.get("closed", False):
+                        continue
+
+                    raw_markets = ev.get("markets", [])
+                    for m in raw_markets:
+                        question = m.get("question", "")
+                        has_temp = any(c in question for c in ("°F", "°f", "°C", "°c"))
+                        if not has_temp:
+                            continue
+
+                        clob_token_ids_raw = m.get("clobTokenIds", "")
+                        token_ids: list[str] = []
+                        if isinstance(clob_token_ids_raw, str) and clob_token_ids_raw:
+                            try:
+                                token_ids = json.loads(clob_token_ids_raw)
+                            except json.JSONDecodeError:
+                                pass
+                        elif isinstance(clob_token_ids_raw, list):
+                            token_ids = [str(t) for t in clob_token_ids_raw]
+                        if not token_ids:
+                            continue
+
+                        yes_token = token_ids[0]
+
+                        prices_raw = m.get("outcomePrices", "")
+                        price_list: list[float] = []
+                        if isinstance(prices_raw, str):
+                            for p in prices_raw.strip("[]").split(","):
+                                try:
+                                    price_list.append(float(p.strip().strip('"')))
+                                except ValueError:
+                                    price_list.append(0.0)
+
+                        if price_list and 0.01 <= price_list[0] <= 0.99:
+                            result[yes_token] = price_list[0]
+                            try:
+                                conn.execute(
+                                    "INSERT OR IGNORE INTO bt_active_prices (token_id, yes_price, fetched_at) VALUES (?, ?, datetime('now'))",
+                                    (yes_token, price_list[0]),
+                                )
+                            except sqlite3.Error:
+                                pass
+
+                if len(data) < 100:
+                    break
+                page += 1
+
+        conn.commit()
+        log.info("active_prices_fetched", count=len(result))
+        return result
+
+    def get_active_price(self, token_id: str) -> float | None:
+        """Get cached active market price for a token."""
+        conn = self._get_conn()
+        row = conn.execute(
+            "SELECT yes_price FROM bt_active_prices WHERE token_id = ? ORDER BY fetched_at DESC LIMIT 1",
+            (token_id,),
+        ).fetchone()
+        if row:
+            return float(row["yes_price"])
+        return None
 
     async def prefetch_forecasts(
         self,

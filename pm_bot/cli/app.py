@@ -169,6 +169,10 @@ def backtest(
     cities: Optional[str] = typer.Option("NYC", "--cities", "-c", help="Comma-separated cities"),
     csv: Optional[str] = typer.Option(None, "--csv", help="Export CSV to path"),
     real: bool = typer.Option(False, "--real", help="Use real Polymarket historical prices and resolved outcomes"),
+    stop_loss: float = typer.Option(0.0, "--stop-loss", help="Stop-loss fraction of position (e.g. 0.5=50%)"),
+    kelly: float = typer.Option(0.25, "--kelly", help="Kelly fraction (0.25=quarter, 0.5=half, 1.0=full)"),
+    max_pos: float = typer.Option(0.10, "--max-pos", help="Max single position as fraction of bankroll"),
+    no_compound: bool = typer.Option(False, "--no-compound", help="Disable compounding (fixed bankroll)"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ):
     """Run backtest against historical data."""
@@ -182,5 +186,9 @@ def backtest(
         cities_str=cities,
         csv_path=csv,
         real=real,
+        stop_loss=stop_loss,
+        kelly=kelly,
+        max_pos=max_pos,
+        no_compound=no_compound,
         debug=debug,
     ))

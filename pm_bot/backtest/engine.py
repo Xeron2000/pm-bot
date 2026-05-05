@@ -28,6 +28,8 @@ class SimulatedTrade:
     cost: float
     pnl: float = 0.0
     resolved: bool = False
+    entry_price: float = 0.0
+    stop_loss_pct: float = 0.0
 
 
 @dataclass
@@ -54,12 +56,22 @@ class BacktestEngine:
         days: int = 90,
         costs: CostModel | None = None,
         cities: list[str] | None = None,
+        stop_loss_pct: float = 0.0,
+        kelly_fraction_val: float = 0.25,
+        max_single_pct: float = 0.10,
+        max_notional: float = 100.0,
+        compound: bool = True,
     ) -> None:
         self.strategies = strategies
         self.bankroll = bankroll
         self.days = days
         self.costs = costs or CostModel()
         self.cities = cities or ["NYC"]
+        self.stop_loss_pct = stop_loss_pct
+        self.kelly_fraction_val = kelly_fraction_val
+        self.max_single_pct = max_single_pct
+        self.max_notional = max_notional
+        self.compound = compound
 
     async def run(self) -> list[BacktestResult]:
         fetcher = HistoricalDataFetcher()
@@ -72,6 +84,7 @@ class BacktestEngine:
                 trades: list[SimulatedTrade] = []
                 bankroll_series: list[float] = [self.bankroll]
                 current_bankroll = self.bankroll
+                cumulative_pnl = 0.0
 
                 for day_offset in range(self.days):
                     run_date = today - timedelta(days=self.days - day_offset)
@@ -94,10 +107,11 @@ class BacktestEngine:
                                 edge=rec.edge,
                                 yes_price=rec.bucket.yes_price,
                                 bankroll=current_bankroll,
-                                kelly_fraction_val=0.25,
-                                max_single=current_bankroll * 0.1,
+                                kelly_fraction_val=self.kelly_fraction_val,
+                                max_single=current_bankroll * self.max_single_pct,
                             )
-                            if size < 0.5:
+                            size = min(size, self.max_notional)
+                            if size * rec.bucket.yes_price < 0.5:
                                 continue
 
                             cost = self.costs.calculate_cost("taker", rec.price, size)
@@ -109,7 +123,7 @@ class BacktestEngine:
                                 if rec.direction == "YES":
                                     pnl = size * (1.0 - rec.price) - cost if hit else -size * rec.price - cost
                                 else:
-                                    pnl = size * rec.price - cost if not hit else -size * (1.0 - rec.price) - cost
+                                    pnl = size * (1.0 - rec.price) - cost if not hit else -size * rec.price - cost
 
                             trade = SimulatedTrade(
                                 date=date_str,
@@ -127,16 +141,19 @@ class BacktestEngine:
                             if resolved:
                                 current_bankroll += pnl
                                 current_bankroll = max(current_bankroll, 0.01)
+                                cumulative_pnl += pnl
+                                if not self.compound:
+                                    current_bankroll = self.bankroll
 
-                    bankroll_series.append(current_bankroll)
+                    bankroll_series.append(current_bankroll + (cumulative_pnl if not self.compound else 0.0))
 
                 metrics = calculate_metrics(trades, bankroll_series)
 
                 results.append(BacktestResult(
                     strategy_name=strat.name,
                     bankroll=self.bankroll,
-                    final_value=current_bankroll,
-                    total_pnl=current_bankroll - self.bankroll,
+                    final_value=self.bankroll + (cumulative_pnl if not self.compound else current_bankroll - self.bankroll),
+                    total_pnl=cumulative_pnl if not self.compound else current_bankroll - self.bankroll,
                     trades=trades,
                     sharpe_ratio=metrics.get("sharpe", 0.0),
                     sortino_ratio=metrics.get("sortino", 0.0),
@@ -147,7 +164,6 @@ class BacktestEngine:
                     brier_score=metrics.get("brier_score", 0.0),
                 ))
 
-        fetcher.close()
         return results
 
     async def run_real(self) -> list[BacktestResult]:
@@ -167,9 +183,17 @@ class BacktestEngine:
                 fetcher.close()
                 return []
 
+            if self.cities:
+                from pm_bot.models.config import resolve_city_alias
+                allowed = {resolve_city_alias(c) for c in self.cities}
+                resolved_events = [ev for ev in resolved_events if ev.city in allowed]
+
             log.info("resolved_events_count", count=len(resolved_events))
 
-            await fetcher.enrich_events_with_clob_prices(client, resolved_events)
+            if resolved_events and resolved_events[0].markets:
+                sample_m = resolved_events[0].markets[0]
+                if len(sample_m.token_id) > 20:
+                    await fetcher.enrich_events_with_clob_prices(client, resolved_events)
 
             unique_cities = list({ev.city for ev in resolved_events})
             await fetcher.prefetch_forecasts(client, unique_cities, self.days)
@@ -178,6 +202,7 @@ class BacktestEngine:
                 trades: list[SimulatedTrade] = []
                 bankroll_series: list[float] = [self.bankroll]
                 current_bankroll = self.bankroll
+                cumulative_pnl = 0.0
 
                 for ev in resolved_events:
                     forecast = fetcher.get_cached_forecast(ev.city, ev.target_date, ev.measure_type)
@@ -199,20 +224,32 @@ class BacktestEngine:
                             edge=rec.edge,
                             yes_price=rec.bucket.yes_price,
                             bankroll=current_bankroll,
-                            kelly_fraction_val=0.25,
-                            max_single=current_bankroll * 0.1,
+                            kelly_fraction_val=self.kelly_fraction_val,
+                            max_single=current_bankroll * self.max_single_pct,
                         )
-                        if size < 0.5:
+                        size = min(size, self.max_notional)
+                        if size * effective_price < 0.5:
                             continue
 
                         cost = self.costs.calculate_cost("taker", effective_price, size)
 
                         hit = self._real_bucket_hit(ev, rec.bucket)
 
+                        no_price = 1.0 - effective_price
+
                         if rec.direction == "YES":
-                            pnl = size * (1.0 - effective_price) - cost if hit else -size * effective_price - cost
+                            raw_pnl = size * (1.0 - effective_price) if hit else -size * effective_price
                         else:
-                            pnl = size * (1.0 - effective_price) - cost if not hit else -size * effective_price - cost
+                            raw_pnl = size * effective_price if not hit else -size * (1.0 - effective_price)
+
+                        pnl = raw_pnl - cost
+
+                        if self.stop_loss_pct > 0 and raw_pnl < 0:
+                            max_investment = size * (no_price if rec.direction == "NO" else effective_price)
+                            max_loss = max_investment * self.stop_loss_pct
+                            if abs(raw_pnl) > max_loss:
+                                slippage = self.costs.stop_loss_slippage(max_investment)
+                                pnl = -max_loss - cost - slippage
 
                         trade = SimulatedTrade(
                             date=ev.target_date,
@@ -224,21 +261,26 @@ class BacktestEngine:
                             cost=cost,
                             pnl=pnl,
                             resolved=True,
+                            entry_price=effective_price,
+                            stop_loss_pct=self.stop_loss_pct,
                         )
                         trades.append(trade)
 
                         current_bankroll += pnl
                         current_bankroll = max(current_bankroll, 0.01)
+                        cumulative_pnl += pnl
+                        if not self.compound:
+                            current_bankroll = self.bankroll
 
-                    bankroll_series.append(current_bankroll)
+                    bankroll_series.append(current_bankroll + (cumulative_pnl if not self.compound else 0.0))
 
                 metrics = calculate_metrics(trades, bankroll_series)
 
                 results.append(BacktestResult(
                     strategy_name=strat.name,
                     bankroll=self.bankroll,
-                    final_value=current_bankroll,
-                    total_pnl=current_bankroll - self.bankroll,
+                    final_value=self.bankroll + (cumulative_pnl if not self.compound else current_bankroll - self.bankroll),
+                    total_pnl=cumulative_pnl if not self.compound else current_bankroll - self.bankroll,
                     trades=trades,
                     sharpe_ratio=metrics.get("sharpe", 0.0),
                     sortino_ratio=metrics.get("sortino", 0.0),
@@ -259,27 +301,39 @@ class BacktestEngine:
     ) -> WeatherEvent | None:
         """Build a WeatherEvent for real-data backtesting.
 
-        Uses CLOB T-24h prices where available (enriched by
-        enrich_events_with_clob_prices). Falls back to forecast-derived
-        probability for markets without CLOB data.
+        Price priority (highest to lowest):
+        1. CLOB T-24h price (enriched by enrich_events_with_clob_prices)
+        2. Forecast-derived probability (fallback)
+
+        Resolved markets have outcomePrices=0/1, so those are never used
+        directly — we always need an external price source.
         """
         from pm_bot.core.weather import bucket_probability_numpy
 
         buckets: list[TemperatureBucket] = []
+        clob_count = 0
+        forecast_count = 0
+
         for m in ev.markets:
             bucket = parse_bucket(m.question, m.token_id, yes_price=0.0, no_price=1.0, volume=0.0)
             if bucket is not None:
                 if m.yes_price > 0.01 and m.yes_price < 0.99:
                     bucket.yes_price = m.yes_price
                     bucket.no_price = m.no_price
+                    clob_count += 1
                 else:
                     prob = bucket_probability_numpy(forecast, bucket.temp_low_c, bucket.temp_high_c)
                     bucket.yes_price = prob
                     bucket.no_price = 1.0 - prob
+                    forecast_count += 1
+
                 buckets.append(bucket)
 
         if not buckets:
             return None
+
+        if clob_count > 0:
+            log.debug("price_sources", evt_id=ev.event_id, clob=clob_count, fc=forecast_count)
 
         def sort_key(b: TemperatureBucket) -> float:
             if b.is_low_tail:
