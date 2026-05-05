@@ -241,3 +241,37 @@ Exhaustive web research + code audit found 8 bugs affecting backtest accuracy. C
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: °F bucket bug fixes and corrected backtest
+
+**Date**: 2026-05-05
+**Task**: °F bucket bug fixes and corrected backtest
+**Branch**: `main`
+
+### Summary
+
+Found and fixed °F-related bugs: bucket_probability_numpy floor truncation in °F space, _bucket_hit floor semantics, narrow_no °F bucket width, aggregation.py °F support. Also fixed in prior commit: feeRateBps 50+exponent 0.5, timezone-aware T-24h, CLOB tail price filter, ensemble std scaling. Corrected 90-day backtest: truncation_edge +1489%, neg_risk_sum +1127%, gopfan2 +1173%, ensemble_spread +666%, resolution_div +266%.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a458d95` | (see git log) |
+| `d4ab0b5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
