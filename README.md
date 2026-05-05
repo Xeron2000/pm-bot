@@ -127,4 +127,8 @@ pm-bot scan --cities "New York" --verbose
 
 ## License
 
-Private repository. Not licensed for redistribution.
+MIT License. See [LICENSE](LICENSE) for details.
+
+## Disclaimer
+
+This software is for educational and research purposes only. Trading on prediction markets involves significant financial risk. Past backtest performance does not guarantee future results. The authors are not responsible for any financial losses incurred through use of this software.
