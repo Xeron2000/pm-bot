@@ -341,3 +341,37 @@ Implemented backtest fidelity improvements: FillModel (maker fill probability 50
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: Remove low-temp markets + bug fixes
+
+**Date**: 2026-05-05
+**Task**: Remove low-temp markets + bug fixes
+**Branch**: `main`
+
+### Summary
+
+Fixed 3 critical bugs (low-temp forecast hardcoded temperature_2m_max → 0.0°C, gopfan2 fallback edge giving 80% when model=0, truncation_edge °F frac using °C mean). Then removed all low-temp market support: deleted _detect_measure_type, LOW_CUTOFF_HOUR, temperature_2m_min parsing, dual forecast fetching. Hardcoded measure_type=high across all modules. 977 tests pass, ruff+mypy clean. 6-strategy 90-day live backtest: +273% to +433%.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `057d3e9` | (see git log) |
+| `ca4a037` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

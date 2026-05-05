@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 10
+- **Total Sessions**: 11
 - **Last Active**: 2026-05-05
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~343 | Active |
+| `journal-1.md` | ~377 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 11 | 2026-05-05 | Remove low-temp markets + bug fixes | `057d3e9`, `ca4a037` | `main` |
 | 10 | 2026-05-05 | Backtest fidelity: FillModel, Dune prices, forecast penalty, portfolio mode | `cc6c8ab` | `main` |
 | 9 | 2026-05-05 | New strategies, auto-settle, 90% test coverage | `b826652` | `main` |
 | 8 | 2026-05-05 | °F bucket bug fixes and corrected backtest | `a458d95`, `d4ab0b5` | `main` |
