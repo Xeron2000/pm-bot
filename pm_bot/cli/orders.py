@@ -84,7 +84,12 @@ async def run_orders(debug: bool = False) -> None:
 
                 side_style = "bold green" if side == "BUY" else "bold red"
                 trade_table.add_row(
-                    tid, market, f"[{side_style}]{side}[/]", price, size, status,
+                    tid,
+                    market,
+                    f"[{side_style}]{side}[/]",
+                    price,
+                    size,
+                    status,
                 )
 
             console.print(trade_table)
@@ -96,6 +101,7 @@ async def run_orders(debug: bool = False) -> None:
 
 def _setup_logging(debug: bool) -> None:
     import logging
+
     if debug:
         structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG))
     else:

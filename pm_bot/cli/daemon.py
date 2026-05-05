@@ -58,7 +58,9 @@ class TradingDaemon:
         self.max_per_city = float(os.environ.get("PM_BOT_MAX_PER_CITY", sizing.get("max_per_city", 100.0)))
         self.max_total_pct = float(os.environ.get("PM_BOT_MAX_TOTAL_PCT", sizing.get("max_total_pct", 0.30)))
         self.scan_interval = int(daemon_cfg.get("scan_interval", 300))
-        self.heartbeat_path = Path(os.environ.get("PM_BOT_HEARTBEAT", daemon_cfg.get("heartbeat_path", str(HEARTBEAT_FILE)))).expanduser()
+        self.heartbeat_path = Path(
+            os.environ.get("PM_BOT_HEARTBEAT", daemon_cfg.get("heartbeat_path", str(HEARTBEAT_FILE)))
+        ).expanduser()
 
         self.risk_manager = RiskManager(
             db=self.db,
@@ -320,8 +322,15 @@ class TradingDaemon:
                 order_id=order_id[:16],
             )
             await notify(
-                self.config, "created", rec.strategy, rec.direction,
-                rec.city, rec.temp_label, price, rec.edge, order_id,
+                self.config,
+                "created",
+                rec.strategy,
+                rec.direction,
+                rec.city,
+                rec.temp_label,
+                price,
+                rec.edge,
+                order_id,
             )
         else:
             log.warning("auto_trade_failed", city=rec.city, direction=rec.direction)
@@ -400,11 +409,14 @@ class TradingDaemon:
 
     def _persist_state(self) -> None:
         daily_spent = self.db.get_daily_spent()
-        self.db.set_state_json("shutdown_state", {
-            "daily_spent": daily_spent,
-            "bankroll": self.bankroll,
-            "last_cycle": time.time(),
-        })
+        self.db.set_state_json(
+            "shutdown_state",
+            {
+                "daily_spent": daily_spent,
+                "bankroll": self.bankroll,
+                "last_cycle": time.time(),
+            },
+        )
 
     def _update_daily_state(self) -> None:
         daily_spent = self.db.get_daily_spent()
@@ -451,16 +463,20 @@ class TradingDaemon:
     def _write_heartbeat(self) -> None:
         try:
             self.heartbeat_path.parent.mkdir(parents=True, exist_ok=True)
-            self.heartbeat_path.write_text(json.dumps({
-                "ts": time.time(),
-                "status": "running",
-                "cycle": self.cycle_count,
-                "trades_this_cycle": self.trades_this_cycle,
-                "daily_spent": self.db.get_daily_spent(),
-                "bankroll": self.bankroll,
-                "pid": os.getpid(),
-                "uptime": time.time() - self.start_time,
-            }))
+            self.heartbeat_path.write_text(
+                json.dumps(
+                    {
+                        "ts": time.time(),
+                        "status": "running",
+                        "cycle": self.cycle_count,
+                        "trades_this_cycle": self.trades_this_cycle,
+                        "daily_spent": self.db.get_daily_spent(),
+                        "bankroll": self.bankroll,
+                        "pid": os.getpid(),
+                        "uptime": time.time() - self.start_time,
+                    }
+                )
+            )
         except Exception as e:
             log.warning("heartbeat_write_failed", error=str(e))
 
@@ -511,7 +527,7 @@ async def _fetch_forecast_at(
     date: str = "",
     model: str = "gfs_seamless",
 ) -> ForecastResult | None:
-    from pm_bot.core.weather import OPEN_METEO_BASE, ENSEMBLE_BASE, _MEMBER_KEYS
+    from pm_bot.core.weather import OPEN_METEO_BASE, ENSEMBLE_BASE, _MEMBER_KEYS_MAX
 
     params: dict[str, str | int | float] = {
         "latitude": lat,
@@ -540,7 +556,7 @@ async def _fetch_forecast_at(
         resp.raise_for_status()
         ens_data = resp.json()
         ens_daily = ens_data.get("daily", {})
-        for mk in _MEMBER_KEYS:
+        for mk in _MEMBER_KEYS_MAX:
             member_data = ens_daily.get(mk, [])
             if member_data:
                 v = member_data[0]
@@ -576,9 +592,15 @@ def _estimate_hours_to_resolution(date_str: str) -> float | None:
         return None
     try:
         # Weather markets typically resolve at midnight US Eastern time
-        resolution = datetime.strptime(date_str, "%Y-%m-%d").replace(
-            hour=5, minute=0, second=0  # UTC 05:00 ≈ midnight ET
-        ).replace(tzinfo=timezone.utc)
+        resolution = (
+            datetime.strptime(date_str, "%Y-%m-%d")
+            .replace(
+                hour=5,
+                minute=0,
+                second=0,  # UTC 05:00 ≈ midnight ET
+            )
+            .replace(tzinfo=timezone.utc)
+        )
         now = datetime.now(timezone.utc)
         delta = (resolution - now).total_seconds() / 3600.0
         return max(0.0, delta)
@@ -669,13 +691,17 @@ async def daemon_status(debug: bool = False) -> None:
     table.add_row("Daily P&L", f"${daily_pnl:.2f}")
     table.add_row("Open Orders", str(open_trades))
     table.add_row("Total Exposure", f"${total_exposure:.2f}")
-    table.add_row("Last Heartbeat", datetime.fromtimestamp(hb_data.get("ts", 0)).strftime("%H:%M:%S") if hb_data.get("ts") else "N/A")
+    table.add_row(
+        "Last Heartbeat",
+        datetime.fromtimestamp(hb_data.get("ts", 0)).strftime("%H:%M:%S") if hb_data.get("ts") else "N/A",
+    )
 
     console.print(table)
 
 
 def _setup_logging(debug: bool) -> None:
     import logging
+
     if debug:
         structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG))
     else:

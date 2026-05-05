@@ -31,7 +31,7 @@ def bucket_probability_normal(mean: float, std: float, low: float, high: float, 
 def compute_bma_weights(sources: list[SourceForecast]) -> list[float]:
     if not sources:
         return []
-    inv_sq = [1.0 / max(s.std ** 2, 0.01) for s in sources]
+    inv_sq = [1.0 / max(s.std**2, 0.01) for s in sources]
     total = sum(inv_sq)
     return [w / total for w in inv_sq]
 
@@ -126,7 +126,7 @@ async def fetch_all_sources(
 
     weights = compute_bma_weights(sources)
     bma_mean = sum(w * s.mean for w, s in zip(weights, sources))
-    bma_var = sum(w * (s.std ** 2 + (s.mean - bma_mean) ** 2) for w, s in zip(weights, sources))
+    bma_var = sum(w * (s.std**2 + (s.mean - bma_mean) ** 2) for w, s in zip(weights, sources))
     bma_std = math.sqrt(max(bma_var, 0.01))
 
     agreement = compute_agreement_score(sources)

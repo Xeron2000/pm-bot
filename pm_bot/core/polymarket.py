@@ -46,8 +46,7 @@ async def fetch_weather_events(client: httpx.AsyncClient, include_closed: bool =
     offset = 0
     while offset < 50000:
         try:
-            data = await _get(client, f"{GAMMA_BASE}/events", "markets",
-                              closed=closed, limit=500, offset=offset)
+            data = await _get(client, f"{GAMMA_BASE}/events", "markets", closed=closed, limit=500, offset=offset)
         except httpx.HTTPError:
             break
         if not isinstance(data, list) or not data:
@@ -162,10 +161,27 @@ def _parse_prices(market: dict) -> tuple[float, float]:
 
 
 _CITY_PATTERNS: list[str] = [
-    "New York", "NYC", "Los Angeles", "LA", "Chicago", "Miami", "Dallas",
-    "Atlanta", "London", "Paris", "Hong Kong", "Seoul", "Tokyo",
-    "Shanghai", "Buenos Aires", "Jeddah", "Ankara", "Lagos",
-    "São Paulo", "Sao Paulo", "Angeles",
+    "New York",
+    "NYC",
+    "Los Angeles",
+    "LA",
+    "Chicago",
+    "Miami",
+    "Dallas",
+    "Atlanta",
+    "London",
+    "Paris",
+    "Hong Kong",
+    "Seoul",
+    "Tokyo",
+    "Shanghai",
+    "Buenos Aires",
+    "Jeddah",
+    "Ankara",
+    "Lagos",
+    "São Paulo",
+    "Sao Paulo",
+    "Angeles",
 ]
 
 # Map shorter names to canonical form

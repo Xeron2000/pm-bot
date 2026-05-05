@@ -28,39 +28,54 @@ def backtest_run(
     cities: Optional[str] = typer.Option("NYC", "--cities", "-c", help="Comma-separated cities"),
     csv_path: Optional[str] = typer.Option(None, "--csv", help="Export results to CSV file"),
     real: bool = typer.Option(False, "--real", help="Use real Polymarket historical prices and resolved outcomes"),
-    stop_loss: float = typer.Option(0.0, "--stop-loss", help="Stop-loss as fraction of position (e.g. 0.5 = 50% stop-loss)"),
+    stop_loss: float = typer.Option(
+        0.0, "--stop-loss", help="Stop-loss as fraction of position (e.g. 0.5 = 50% stop-loss)"
+    ),
     kelly: float = typer.Option(0.25, "--kelly", help="Kelly fraction (0.25=quarter, 0.5=half, 1.0=full)"),
     max_pos: float = typer.Option(0.10, "--max-pos", help="Max single position as fraction of bankroll"),
     no_compound: bool = typer.Option(False, "--no-compound", help="Disable compounding (fixed bankroll)"),
-    live: bool = typer.Option(False, "--live", help="Live-trading mode: maker-only, $50/pos cap, 8%+ edge, ghost-trade friction"),
-    compare_forecast: bool = typer.Option(False, "--compare-forecast", help="Dual-run: all markets vs CLOB-only, showing forecast bias delta"),
-    forecast_penalty: float = typer.Option(0.05, "--forecast-penalty", help="Conservative penalty (cents/share) for forecast-derived prices (default: 0.05)"),
-    portfolio: bool = typer.Option(False, "--portfolio", help="Portfolio mode: all strategies share one bankroll, merged signals"),
+    live: bool = typer.Option(
+        False, "--live", help="Live-trading mode: maker-only, $50/pos cap, 8%+ edge, ghost-trade friction"
+    ),
+    compare_forecast: bool = typer.Option(
+        False, "--compare-forecast", help="Dual-run: all markets vs CLOB-only, showing forecast bias delta"
+    ),
+    forecast_penalty: float = typer.Option(
+        0.05,
+        "--forecast-penalty",
+        help="Conservative penalty (cents/share) for forecast-derived prices (default: 0.05)",
+    ),
+    portfolio: bool = typer.Option(
+        False, "--portfolio", help="Portfolio mode: all strategies share one bankroll, merged signals"
+    ),
     seed: Optional[int] = typer.Option(None, "--seed", help="Random seed for deterministic FillModel sampling"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ):
     """Run backtest against historical data."""
     import asyncio
-    asyncio.run(_run_backtest(
-        strategy=strategy,
-        all_strats=all_strats,
-        compare=compare,
-        bankroll=bankroll,
-        days=days,
-        cities_str=cities,
-        csv_path=csv_path,
-        real=real,
-        stop_loss=stop_loss,
-        kelly=kelly,
-        max_pos=max_pos,
-        no_compound=no_compound,
-        live=live,
-        compare_forecast=compare_forecast,
-        forecast_penalty=forecast_penalty,
-        portfolio=portfolio,
-        seed=seed,
-        debug=debug,
-    ))
+
+    asyncio.run(
+        _run_backtest(
+            strategy=strategy,
+            all_strats=all_strats,
+            compare=compare,
+            bankroll=bankroll,
+            days=days,
+            cities_str=cities,
+            csv_path=csv_path,
+            real=real,
+            stop_loss=stop_loss,
+            kelly=kelly,
+            max_pos=max_pos,
+            no_compound=no_compound,
+            live=live,
+            compare_forecast=compare_forecast,
+            forecast_penalty=forecast_penalty,
+            portfolio=portfolio,
+            seed=seed,
+            debug=debug,
+        )
+    )
 
 
 async def _run_backtest(
@@ -101,7 +116,9 @@ async def _run_backtest(
     if portfolio:
         mode_label += " (PORTFOLIO)"
 
-    console.print(f"[bold]Running backtest ({mode_label}): {len(strats)} strategies, {days} days, ${bankroll:.0f} bankroll[/bold]")
+    console.print(
+        f"[bold]Running backtest ({mode_label}): {len(strats)} strategies, {days} days, ${bankroll:.0f} bankroll[/bold]"
+    )
 
     costs = CostModel()
     costs.forecast_penalty_pct = forecast_penalty
@@ -155,6 +172,7 @@ async def _run_backtest(
 
 def _setup_logging(debug: bool) -> None:
     import logging
+
     if debug:
         structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG))
     else:
@@ -164,17 +182,20 @@ def _setup_logging(debug: bool) -> None:
 def _filter_clob_only(results: list[BacktestResult]) -> list[BacktestResult]:
     """Create a filtered view excluding forecast-derived price trades."""
     from pm_bot.backtest.engine import BacktestResult as BR
+
     filtered: list[BR] = []
     for r in results:
         clob_trades = [t for t in r.trades if t.price_source != "forecast" and t.filled]
         if not clob_trades:
-            filtered.append(BR(
-                strategy_name=r.strategy_name,
-                bankroll=r.bankroll,
-                final_value=r.bankroll,
-                total_pnl=0.0,
-                trades=[],
-            ))
+            filtered.append(
+                BR(
+                    strategy_name=r.strategy_name,
+                    bankroll=r.bankroll,
+                    final_value=r.bankroll,
+                    total_pnl=0.0,
+                    trades=[],
+                )
+            )
             continue
 
         # Recompute P&L from filtered trades with compounding
@@ -187,23 +208,26 @@ def _filter_clob_only(results: list[BacktestResult]) -> list[BacktestResult]:
                 cumulative_pnl += t.pnl
 
         from pm_bot.backtest.metrics import calculate_metrics
+
         bankroll_series = [r.bankroll] + [r.bankroll + cumulative_pnl]
         metrics = calculate_metrics(clob_trades, bankroll_series)
 
-        filtered.append(BR(
-            strategy_name=r.strategy_name,
-            bankroll=r.bankroll,
-            final_value=r.bankroll + cumulative_pnl,
-            total_pnl=cumulative_pnl,
-            trades=clob_trades,
-            sharpe_ratio=metrics.get("sharpe", 0.0),
-            sortino_ratio=metrics.get("sortino", 0.0),
-            max_drawdown=metrics.get("max_drawdown", 0.0),
-            win_rate=metrics.get("win_rate", 0.0),
-            avg_win=metrics.get("avg_win", 0.0),
-            avg_loss=metrics.get("avg_loss", 0.0),
-            brier_score=metrics.get("brier_score", 0.0),
-        ))
+        filtered.append(
+            BR(
+                strategy_name=r.strategy_name,
+                bankroll=r.bankroll,
+                final_value=r.bankroll + cumulative_pnl,
+                total_pnl=cumulative_pnl,
+                trades=clob_trades,
+                sharpe_ratio=metrics.get("sharpe", 0.0),
+                sortino_ratio=metrics.get("sortino", 0.0),
+                max_drawdown=metrics.get("max_drawdown", 0.0),
+                win_rate=metrics.get("win_rate", 0.0),
+                avg_win=metrics.get("avg_win", 0.0),
+                avg_loss=metrics.get("avg_loss", 0.0),
+                brier_score=metrics.get("brier_score", 0.0),
+            )
+        )
     return filtered
 
 

@@ -12,7 +12,9 @@ from pm_bot.cli.display import render_events
 console = Console()
 
 
-async def run_markets(cities_str: str | None = None, all_cities: bool = False, include_closed: bool = False, debug: bool = False) -> None:
+async def run_markets(
+    cities_str: str | None = None, all_cities: bool = False, include_closed: bool = False, debug: bool = False
+) -> None:
     _setup_logging(debug)
 
     with Progress(SpinnerColumn(), TextColumn("[bold blue]Fetching markets..."), console=console) as progress:
@@ -33,6 +35,7 @@ async def run_markets(cities_str: str | None = None, all_cities: bool = False, i
 
 def _setup_logging(debug: bool) -> None:
     import logging
+
     if debug:
         structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG))
     else:

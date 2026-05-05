@@ -40,7 +40,9 @@ async def run_scan(
             events = [e for e in events if all_cities or e.city in cities]
 
             if not events:
-                console.print("[yellow]No weather markets found. Try --closed to include settled markets, or wait for new markets to open.[/yellow]")
+                console.print(
+                    "[yellow]No weather markets found. Try --closed to include settled markets, or wait for new markets to open.[/yellow]"
+                )
                 return
 
             progress.update(task, description="Fetching forecasts...")
@@ -102,6 +104,7 @@ def _resolve_strategies(name: str) -> list[tuple[str, Strategy]]:
 
 def _setup_logging(debug: bool) -> None:
     import logging
+
     if debug:
         structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG))
     else:

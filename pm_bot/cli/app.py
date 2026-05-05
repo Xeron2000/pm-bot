@@ -17,7 +17,12 @@ app.add_typer(daemon_app, name="daemon")
 
 @app.command()
 def scan(
-    strategy: str = typer.Option("all", "--strategy", "-s", help="Strategy: all, gopfan2, resolution_div, neg_risk_sum, truncation_edge, ensemble_spread, neg_risk_field_fade"),
+    strategy: str = typer.Option(
+        "all",
+        "--strategy",
+        "-s",
+        help="Strategy: all, gopfan2, resolution_div, neg_risk_sum, truncation_edge, ensemble_spread, neg_risk_field_fade",
+    ),
     cities: Optional[str] = typer.Option(None, "--cities", "-c", help="Comma-separated cities (e.g. NYC,HK,MIA)"),
     all_cities: bool = typer.Option(False, "--all", help="Scan all available cities"),
     edge: Optional[float] = typer.Option(None, "--edge", "-e", help="Override minimum edge threshold"),
@@ -28,16 +33,19 @@ def scan(
 ):
     """Scan markets and output strategy recommendations."""
     from pm_bot.cli.scan import run_scan
-    asyncio.run(run_scan(
-        strategy=strategy,
-        cities_str=cities,
-        all_cities=all_cities,
-        edge_override=edge,
-        verbose=verbose,
-        include_closed=closed,
-        observed=observed,
-        debug=debug,
-    ))
+
+    asyncio.run(
+        run_scan(
+            strategy=strategy,
+            cities_str=cities,
+            all_cities=all_cities,
+            edge_override=edge,
+            verbose=verbose,
+            include_closed=closed,
+            observed=observed,
+            debug=debug,
+        )
+    )
 
 
 @app.command()
@@ -49,6 +57,7 @@ def markets(
 ):
     """List current weather markets on Polymarket."""
     from pm_bot.cli.markets import run_markets
+
     asyncio.run(run_markets(cities_str=cities, all_cities=all_cities, include_closed=closed, debug=debug))
 
 
@@ -66,17 +75,20 @@ def watch(
 ):
     """TUI continuous monitoring mode with WebSocket real-time prices."""
     from pm_bot.cli.watch import run_watch
-    asyncio.run(run_watch(
-        interval=interval,
-        strategy=strategy,
-        cities_str=cities,
-        all_cities=all_cities,
-        edge_override=edge,
-        include_closed=closed,
-        use_ws=not no_ws,
-        observed=observed,
-        debug=debug,
-    ))
+
+    asyncio.run(
+        run_watch(
+            interval=interval,
+            strategy=strategy,
+            cities_str=cities,
+            all_cities=all_cities,
+            edge_override=edge,
+            include_closed=closed,
+            use_ws=not no_ws,
+            observed=observed,
+            debug=debug,
+        )
+    )
 
 
 @app.command()
@@ -86,6 +98,7 @@ def explain(
 ):
     """Show detailed strategy reasoning for a specific market."""
     from pm_bot.cli.explain import run_explain
+
     asyncio.run(run_explain(market_id=market_id, debug=debug))
 
 
@@ -102,16 +115,19 @@ def trade(
 ):
     """Scan markets and optionally execute trades with confirmation."""
     from pm_bot.cli.trade import run_trade
-    asyncio.run(run_trade(
-        strategy=strategy,
-        cities_str=cities,
-        all_cities=all_cities,
-        edge_override=edge,
-        include_closed=closed,
-        confirm=confirm,
-        observed=observed,
-        debug=debug,
-    ))
+
+    asyncio.run(
+        run_trade(
+            strategy=strategy,
+            cities_str=cities,
+            all_cities=all_cities,
+            edge_override=edge,
+            include_closed=closed,
+            confirm=confirm,
+            observed=observed,
+            debug=debug,
+        )
+    )
 
 
 @app.command()
@@ -123,6 +139,7 @@ def settle(
 ):
     """Redeem winning positions from resolved markets (V2 auto-settle)."""
     from pm_bot.cli.settle import run_settle
+
     run_settle(all_positions=all_positions, condition_ids_str=condition_ids, list_only=list_only, debug=debug)
 
 
@@ -132,6 +149,7 @@ def orders(
 ):
     """Show current open orders and trade status."""
     from pm_bot.cli.orders import run_orders
+
     asyncio.run(run_orders(debug=debug))
 
 
@@ -141,6 +159,7 @@ def config(
 ):
     """Show current configuration or generate template."""
     from pm_bot.cli.config_cmd import run_config
+
     run_config(init=init)
 
 
@@ -150,6 +169,7 @@ def daemon_start_cmd(
 ):
     """Start the 24/7 automated trading daemon."""
     from pm_bot.cli.daemon import daemon_start
+
     asyncio.run(daemon_start(debug=debug))
 
 
@@ -159,6 +179,7 @@ def daemon_stop_cmd(
 ):
     """Stop the running daemon gracefully."""
     from pm_bot.cli.daemon import daemon_stop
+
     asyncio.run(daemon_stop(debug=debug))
 
 
@@ -168,6 +189,7 @@ def daemon_status_cmd(
 ):
     """Show daemon status, P&L, and open orders."""
     from pm_bot.cli.daemon import daemon_status
+
     asyncio.run(daemon_status(debug=debug))
 
 
@@ -185,32 +207,43 @@ def backtest(
     kelly: float = typer.Option(0.25, "--kelly", help="Kelly fraction (0.25=quarter, 0.5=half, 1.0=full)"),
     max_pos: float = typer.Option(0.10, "--max-pos", help="Max single position as fraction of bankroll"),
     no_compound: bool = typer.Option(False, "--no-compound", help="Disable compounding (fixed bankroll)"),
-    live: bool = typer.Option(False, "--live", help="Live-trading mode: maker-only, $50/pos cap, 8%+ edge, ghost-trade friction"),
-    compare_forecast: bool = typer.Option(False, "--compare-forecast", help="Dual-run: all markets vs CLOB-only, showing forecast bias delta"),
-    forecast_penalty: float = typer.Option(0.05, "--forecast-penalty", help="Conservative penalty for forecast-derived prices (default: 0.05)"),
-    portfolio: bool = typer.Option(False, "--portfolio", help="Portfolio mode: all strategies share one bankroll, merged signals"),
+    live: bool = typer.Option(
+        False, "--live", help="Live-trading mode: maker-only, $50/pos cap, 8%+ edge, ghost-trade friction"
+    ),
+    compare_forecast: bool = typer.Option(
+        False, "--compare-forecast", help="Dual-run: all markets vs CLOB-only, showing forecast bias delta"
+    ),
+    forecast_penalty: float = typer.Option(
+        0.05, "--forecast-penalty", help="Conservative penalty for forecast-derived prices (default: 0.05)"
+    ),
+    portfolio: bool = typer.Option(
+        False, "--portfolio", help="Portfolio mode: all strategies share one bankroll, merged signals"
+    ),
     seed: Optional[int] = typer.Option(None, "--seed", help="Random seed for deterministic FillModel sampling"),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ):
     """Run backtest against historical data."""
     from pm_bot.cli.backtest_cmd import _run_backtest
-    asyncio.run(_run_backtest(
-        strategy=strategy,
-        all_strats=all_strats,
-        compare=compare,
-        bankroll=bankroll,
-        days=days,
-        cities_str=cities,
-        csv_path=csv,
-        real=real,
-        stop_loss=stop_loss,
-        kelly=kelly,
-        max_pos=max_pos,
-        no_compound=no_compound,
-        live=live,
-        compare_forecast=compare_forecast,
-        forecast_penalty=forecast_penalty,
-        portfolio=portfolio,
-        seed=seed,
-        debug=debug,
-    ))
+
+    asyncio.run(
+        _run_backtest(
+            strategy=strategy,
+            all_strats=all_strats,
+            compare=compare,
+            bankroll=bankroll,
+            days=days,
+            cities_str=cities,
+            csv_path=csv,
+            real=real,
+            stop_loss=stop_loss,
+            kelly=kelly,
+            max_pos=max_pos,
+            no_compound=no_compound,
+            live=live,
+            compare_forecast=compare_forecast,
+            forecast_penalty=forecast_penalty,
+            portfolio=portfolio,
+            seed=seed,
+            debug=debug,
+        )
+    )

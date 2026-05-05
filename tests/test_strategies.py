@@ -84,19 +84,21 @@ class TestGopfan2Strategy:
     def test_tail_low_signal(self):
         buckets = [
             _make_bucket(-999, 20, yes_price=0.03, market_id="tail_low"),
-            _make_bucket(20, 20, yes_price=0.15, market_id="b20"),
-            _make_bucket(21, 21, yes_price=0.20, market_id="b21"),
-            _make_bucket(22, 22, yes_price=0.25, market_id="b22"),
+            _make_bucket(20, 20, yes_price=0.10, market_id="b20"),
+            _make_bucket(21, 21, yes_price=0.25, market_id="b21"),
+            _make_bucket(22, 22, yes_price=0.30, market_id="b22"),
             _make_bucket(23, 23, yes_price=0.20, market_id="b23"),
-            _make_bucket(24, 24, yes_price=0.10, market_id="b24"),
             _make_bucket(999, 999, yes_price=0.07, market_id="tail_high"),
         ]
         event = _make_event(buckets)
-        forecast = _make_forecast(temp_high_c=22.5)
+        forecast = _make_forecast(temp_high_c=19.5)
         strategy = Gopfan2Strategy()
         recs = strategy.run(event, forecast=forecast)
-        tail_recs = [r for r in recs if r.direction == "YES" and r.price <= 0.15]
-        assert len(tail_recs) > 0
+        yes_recs = [r for r in recs if r.direction == "YES" and r.price <= 0.15]
+        assert len(yes_recs) > 0
+        assert all(r.edge > 0 for r in yes_recs)
+        for r in yes_recs:
+            assert "model=" in r.reasoning
 
     def test_no_signal_when_center_close(self):
         buckets = [_make_bucket(i, i, yes_price=0.20, market_id=f"b{i}") for i in range(20, 30)]

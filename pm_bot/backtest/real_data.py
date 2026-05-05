@@ -4,6 +4,7 @@ Data sources (all free, no auth required):
 - Gamma API: resolved weather events + winning outcomes (single pagination pass)
 - Open-Meteo previous-runs: what forecasts actually said on a given date (batch per city)
 """
+
 from __future__ import annotations
 
 import json
@@ -33,10 +34,20 @@ CLOB_PRICES_URL = "https://clob.polymarket.com/prices-history"
 _DEFAULT_STD_C = 2.5
 
 _CITY_STD_C: dict[str, float] = {
-    "New York": 2.5, "London": 2.0, "Denver": 3.5, "Helsinki": 3.5,
-    "Paris": 2.5, "Tokyo": 2.0, "Chicago": 3.0, "Austin": 2.0,
-    "Seoul": 2.5, "Hong Kong": 1.0, "Warsaw": 2.5, "Lagos": 1.0,
-    "Taipei": 1.5, "Miami": 1.5,
+    "New York": 2.5,
+    "London": 2.0,
+    "Denver": 3.5,
+    "Helsinki": 3.5,
+    "Paris": 2.5,
+    "Tokyo": 2.0,
+    "Chicago": 3.0,
+    "Austin": 2.0,
+    "Seoul": 2.5,
+    "Hong Kong": 1.0,
+    "Warsaw": 2.5,
+    "Lagos": 1.0,
+    "Taipei": 1.5,
+    "Miami": 1.5,
 }
 
 _MIN_REQUEST_INTERVAL = 0.12
@@ -44,11 +55,20 @@ _MAX_RETRIES = 3
 _RETRY_BACKOFF_BASE = 1.0
 
 WEATHER_SERIES_SLUGS: list[str] = [
-    "nyc-daily-weather", "london-daily-weather", "denver-daily-weather",
-    "helsinki-daily-weather", "paris-daily-weather", "tokyo-daily-weather",
-    "chicago-daily-weather", "austin-daily-weather", "seoul-daily-weather",
-    "hong-kong-daily-weather", "warsaw-daily-weather", "lagos-daily-weather",
-    "taipei-daily-weather", "miami-daily-weather",
+    "nyc-daily-weather",
+    "london-daily-weather",
+    "denver-daily-weather",
+    "helsinki-daily-weather",
+    "paris-daily-weather",
+    "tokyo-daily-weather",
+    "chicago-daily-weather",
+    "austin-daily-weather",
+    "seoul-daily-weather",
+    "hong-kong-daily-weather",
+    "warsaw-daily-weather",
+    "lagos-daily-weather",
+    "taipei-daily-weather",
+    "miami-daily-weather",
 ]
 
 SERIES_SLUG_TO_CITY: dict[str, str] = {
@@ -147,15 +167,32 @@ class _RateLimiter:
         elapsed = now - self._last
         if elapsed < self._min_interval:
             import asyncio
+
             await asyncio.sleep(self._min_interval - elapsed)
         self._last = monotonic()
 
 
 _CITY_PATTERNS: list[str] = [
-    "New York", "NYC", "Los Angeles", "LA", "Chicago", "Miami", "Dallas",
-    "Atlanta", "London", "Paris", "Hong Kong", "Seoul", "Tokyo",
-    "Shanghai", "Buenos Aires", "Jeddah", "Ankara", "Lagos",
-    "São Paulo", "Sao Paulo",
+    "New York",
+    "NYC",
+    "Los Angeles",
+    "LA",
+    "Chicago",
+    "Miami",
+    "Dallas",
+    "Atlanta",
+    "London",
+    "Paris",
+    "Hong Kong",
+    "Seoul",
+    "Tokyo",
+    "Shanghai",
+    "Buenos Aires",
+    "Jeddah",
+    "Ankara",
+    "Lagos",
+    "São Paulo",
+    "Sao Paulo",
 ]
 
 _CITY_CANONICAL: dict[str, str] = {
@@ -167,17 +204,25 @@ _CITY_CANONICAL: dict[str, str] = {
 
 def _is_weather_title(title: str) -> bool:
     t = title.lower()
-    return any(k in t for k in [
-        "temperature", "high temp", "low temp",
-        "highest temp", "lowest temp",
-    ])
+    return any(
+        k in t
+        for k in [
+            "temperature",
+            "high temp",
+            "low temp",
+            "highest temp",
+            "lowest temp",
+        ]
+    )
 
 
 def _synthesize_ensemble(center: float, city: str = "", n: int = 51) -> list[float]:
     std = _CITY_STD_C.get(city, _DEFAULT_STD_C)
     import hashlib
+
     seed = int(hashlib.md5(f"{center}:{city}".encode()).hexdigest()[:8], 16)
     import random
+
     rng = random.Random(seed)
     return [center + rng.gauss(0, std) for _ in range(n)]
 
@@ -245,10 +290,16 @@ def _parse_flexible_date(date_str: str, title: str = "") -> Any | None:
             m = _re.search(pat, title)
             if m:
                 raw = m.group(1)
-                for fmt in ("%B %d, %Y", "%B %dth, %Y", "%B %dst, %Y",
-                            "%B %dnd, %Y", "%B %drd, %Y",
-                            "%Y-%m-%d", "%B %d"):
-                    cleaned = _re.sub(r'(st|nd|rd|th)', '', raw)
+                for fmt in (
+                    "%B %d, %Y",
+                    "%B %dth, %Y",
+                    "%B %dst, %Y",
+                    "%B %dnd, %Y",
+                    "%B %drd, %Y",
+                    "%Y-%m-%d",
+                    "%B %d",
+                ):
+                    cleaned = _re.sub(r"(st|nd|rd|th)", "", raw)
                     for cf in ("%B %d, %Y", "%B %d %Y", "%Y-%m-%d", "%B %d"):
                         try:
                             dt = datetime.strptime(cleaned, cf)
@@ -298,18 +349,20 @@ class RealDataFetcher:
                 log.debug("api_request", url=url, params=params, attempt=attempt)
                 resp = await client.get(url, params=params, timeout=timeout)
                 if resp.status_code == 429:
-                    wait = _RETRY_BACKOFF_BASE * (2 ** attempt) * 2
+                    wait = _RETRY_BACKOFF_BASE * (2**attempt) * 2
                     log.warning("rate_limited", url=url, wait_s=wait)
                     import asyncio
+
                     await asyncio.sleep(wait)
                     continue
                 resp.raise_for_status()
                 return resp.json()
             except httpx.HTTPError as e:
-                wait = _RETRY_BACKOFF_BASE * (2 ** attempt)
+                wait = _RETRY_BACKOFF_BASE * (2**attempt)
                 log.warning("api_error", url=url, error=str(e), attempt=attempt, wait_s=wait)
                 if attempt < _MAX_RETRIES - 1:
                     import asyncio
+
                     await asyncio.sleep(wait)
         log.error("api_persistent_failure", url=url)
         return None
@@ -499,6 +552,7 @@ class RealDataFetcher:
                     return
                 from pm_bot.core.observation import CITY_TZ
                 from zoneinfo import ZoneInfo
+
                 tz_name = CITY_TZ.get(ev.city, "UTC")
                 tz = ZoneInfo(tz_name)
                 local_midnight = dt.replace(tzinfo=tz)
@@ -529,10 +583,14 @@ class RealDataFetcher:
     def _get_cached_clob_price(self, token_id: str, target_ts: float, tolerance_s: float = 3600.0) -> float | None:
         """Try to get a cached CLOB price within tolerance of target_ts."""
         try:
-            row = self._get_conn().execute(
-                "SELECT ts, price FROM bt_price_history WHERE token_id = ? AND ABS(ts - ?) <= ? ORDER BY ABS(ts - ?) LIMIT 1",
-                (token_id, target_ts, tolerance_s, target_ts),
-            ).fetchone()
+            row = (
+                self._get_conn()
+                .execute(
+                    "SELECT ts, price FROM bt_price_history WHERE token_id = ? AND ABS(ts - ?) <= ? ORDER BY ABS(ts - ?) LIMIT 1",
+                    (token_id, target_ts, tolerance_s, target_ts),
+                )
+                .fetchone()
+            )
             if row:
                 return float(row[1])
         except Exception:
@@ -542,10 +600,14 @@ class RealDataFetcher:
     def _get_cached_dune_price(self, token_id: str, target_ts: float, tolerance_s: float = 7200.0) -> float | None:
         """Try to get a cached Dune price within tolerance of target_ts."""
         try:
-            row = self._get_conn().execute(
-                "SELECT ts, price FROM bt_price_history WHERE token_id = ? AND source = 'dune' AND ABS(ts - ?) <= ? ORDER BY ABS(ts - ?) LIMIT 1",
-                (token_id, target_ts, tolerance_s, target_ts),
-            ).fetchone()
+            row = (
+                self._get_conn()
+                .execute(
+                    "SELECT ts, price FROM bt_price_history WHERE token_id = ? AND source = 'dune' AND ABS(ts - ?) <= ? ORDER BY ABS(ts - ?) LIMIT 1",
+                    (token_id, target_ts, tolerance_s, target_ts),
+                )
+                .fetchone()
+            )
             if row:
                 return float(row[1])
         except Exception:
@@ -650,7 +712,9 @@ class RealDataFetcher:
                 # Dune uses condition_id which maps to event, not individual tokens
                 condition_id = ev.event_id  # fallback
                 prices = await self.fetch_dune_prices(
-                    client, condition_id, hours_before=int(hours_before_settlement),
+                    client,
+                    condition_id,
+                    hours_before=int(hours_before_settlement),
                     dune_api_key=dune_api_key,
                 )
                 for m in ev.markets:
@@ -664,10 +728,7 @@ class RealDataFetcher:
 
         for ev in events:
             # Only fetch Dune prices for events with markets missing CLOB data
-            needs_dune = any(
-                not (m.yes_price > 0.005 and m.yes_price < 0.995)
-                for m in ev.markets
-            )
+            needs_dune = any(not (m.yes_price > 0.005 and m.yes_price < 0.995) for m in ev.markets)
             if needs_dune:
                 tasks.append(asyncio.create_task(_fetch_one(ev)))
 
@@ -901,9 +962,12 @@ class RealDataFetcher:
                         members = _synthesize_ensemble(float(temps[i]), city=canonical)
 
                     fr = ForecastResult(
-                        city=canonical, date=t, model=model,
+                        city=canonical,
+                        date=t,
+                        model=model,
                         temp_high_c=float(temps[i]),
-                        measure_type=measure_type, members=members,
+                        measure_type=measure_type,
+                        members=members,
                     )
                     self._forecast_cache[cache_key] = fr
 
@@ -934,8 +998,11 @@ class RealDataFetcher:
         if row:
             cached_members = json.loads(row["members_json"]) if row["members_json"] else []
             fr = ForecastResult(
-                city=canonical, date=date, model=model,
-                temp_high_c=row["temp_high_c"], measure_type=measure_type,
+                city=canonical,
+                date=date,
+                model=model,
+                temp_high_c=row["temp_high_c"],
+                measure_type=measure_type,
                 members=cached_members,
             )
             self._forecast_cache[cache_key] = fr
@@ -967,7 +1034,7 @@ class RealDataFetcher:
             return result
 
         for batch_start in range(0, len(uncached), 20):
-            batch = uncached[batch_start:batch_start + 20]
+            batch = uncached[batch_start : batch_start + 20]
             for tid in batch:
                 data = await self._get_with_retry(
                     client,

@@ -115,6 +115,7 @@ class BacktestEngine:
 
                         if obs_temp is not None:
                             from pm_bot.core.observation import ObservedTemp
+
                             obs_obj = ObservedTemp(
                                 city=city,
                                 observed_c=obs_temp,
@@ -181,20 +182,23 @@ class BacktestEngine:
 
                 metrics = calculate_metrics(trades, bankroll_series)
 
-                results.append(BacktestResult(
-                    strategy_name=strat.name,
-                    bankroll=self.bankroll,
-                    final_value=self.bankroll + (cumulative_pnl if not self.compound else current_bankroll - self.bankroll),
-                    total_pnl=cumulative_pnl if not self.compound else current_bankroll - self.bankroll,
-                    trades=trades,
-                    sharpe_ratio=metrics.get("sharpe", 0.0),
-                    sortino_ratio=metrics.get("sortino", 0.0),
-                    max_drawdown=metrics.get("max_drawdown", 0.0),
-                    win_rate=metrics.get("win_rate", 0.0),
-                    avg_win=metrics.get("avg_win", 0.0),
-                    avg_loss=metrics.get("avg_loss", 0.0),
-                    brier_score=metrics.get("brier_score", 0.0),
-                ))
+                results.append(
+                    BacktestResult(
+                        strategy_name=strat.name,
+                        bankroll=self.bankroll,
+                        final_value=self.bankroll
+                        + (cumulative_pnl if not self.compound else current_bankroll - self.bankroll),
+                        total_pnl=cumulative_pnl if not self.compound else current_bankroll - self.bankroll,
+                        trades=trades,
+                        sharpe_ratio=metrics.get("sharpe", 0.0),
+                        sortino_ratio=metrics.get("sortino", 0.0),
+                        max_drawdown=metrics.get("max_drawdown", 0.0),
+                        win_rate=metrics.get("win_rate", 0.0),
+                        avg_win=metrics.get("avg_win", 0.0),
+                        avg_loss=metrics.get("avg_loss", 0.0),
+                        brier_score=metrics.get("brier_score", 0.0),
+                    )
+                )
 
         return results
 
@@ -217,6 +221,7 @@ class BacktestEngine:
 
             if self.cities:
                 from pm_bot.models.config import resolve_city_alias
+
                 allowed = {resolve_city_alias(c) for c in self.cities}
                 resolved_events = [ev for ev in resolved_events if ev.city in allowed]
 
@@ -228,6 +233,7 @@ class BacktestEngine:
                     await fetcher.enrich_events_with_clob_prices(client, resolved_events)
                     # Fetch Dune prices for markets still missing CLOB data
                     from pm_bot.core.config_loader import load_config
+
                     config = load_config()
                     dune_key = config.get("dune", {}).get("api_key", "")
                     if dune_key:
@@ -264,6 +270,7 @@ class BacktestEngine:
                     resolved_temp = self._get_resolved_temp(ev)
                     if resolved_temp is not None:
                         from pm_bot.core.observation import ObservedTemp
+
                         obs_obj = ObservedTemp(
                             city=ev.city,
                             observed_c=resolved_temp,
@@ -374,20 +381,23 @@ class BacktestEngine:
 
                 metrics = calculate_metrics(trades, bankroll_series)
 
-                results.append(BacktestResult(
-                    strategy_name=strat.name,
-                    bankroll=self.bankroll,
-                    final_value=self.bankroll + (cumulative_pnl if not self.compound else current_bankroll - self.bankroll),
-                    total_pnl=cumulative_pnl if not self.compound else current_bankroll - self.bankroll,
-                    trades=trades,
-                    sharpe_ratio=metrics.get("sharpe", 0.0),
-                    sortino_ratio=metrics.get("sortino", 0.0),
-                    max_drawdown=metrics.get("max_drawdown", 0.0),
-                    win_rate=metrics.get("win_rate", 0.0),
-                    avg_win=metrics.get("avg_win", 0.0),
-                    avg_loss=metrics.get("avg_loss", 0.0),
-                    brier_score=metrics.get("brier_score", 0.0),
-                ))
+                results.append(
+                    BacktestResult(
+                        strategy_name=strat.name,
+                        bankroll=self.bankroll,
+                        final_value=self.bankroll
+                        + (cumulative_pnl if not self.compound else current_bankroll - self.bankroll),
+                        total_pnl=cumulative_pnl if not self.compound else current_bankroll - self.bankroll,
+                        trades=trades,
+                        sharpe_ratio=metrics.get("sharpe", 0.0),
+                        sortino_ratio=metrics.get("sortino", 0.0),
+                        max_drawdown=metrics.get("max_drawdown", 0.0),
+                        win_rate=metrics.get("win_rate", 0.0),
+                        avg_win=metrics.get("avg_win", 0.0),
+                        avg_loss=metrics.get("avg_loss", 0.0),
+                        brier_score=metrics.get("brier_score", 0.0),
+                    )
+                )
 
         if self.live_mode:
             log.info("fill_model_stats", filled=fill_count, skipped=skip_count)
@@ -410,10 +420,13 @@ class BacktestEngine:
             if not resolved_events:
                 log.warning("no_resolved_events_found", days=self.days)
                 fetcher.close()
-                return BacktestResult(strategy_name="portfolio", bankroll=self.bankroll, final_value=self.bankroll, total_pnl=0.0)
+                return BacktestResult(
+                    strategy_name="portfolio", bankroll=self.bankroll, final_value=self.bankroll, total_pnl=0.0
+                )
 
             if self.cities:
                 from pm_bot.models.config import resolve_city_alias
+
                 allowed = {resolve_city_alias(c) for c in self.cities}
                 resolved_events = [ev for ev in resolved_events if ev.city in allowed]
 
@@ -448,6 +461,7 @@ class BacktestEngine:
                 resolved_temp = self._get_resolved_temp(ev)
                 if resolved_temp is not None:
                     from pm_bot.core.observation import ObservedTemp
+
                     obs_obj = ObservedTemp(
                         city=ev.city,
                         observed_c=resolved_temp,
@@ -461,6 +475,7 @@ class BacktestEngine:
                 # Merge signals from all strategies on the same event
                 # Key: (market_id, direction) — keep highest edge signal per bucket+direction
                 from pm_bot.models.market import Recommendation
+
                 best_recs: dict[tuple[str, str], Recommendation] = {}
                 rec_strats: dict[tuple[str, str], str] = {}
                 for strat in self.strategies:
@@ -661,7 +676,9 @@ class BacktestEngine:
                         bucket.no_price = 1.0 - active_price
                         source = "gamma_active"
                     else:
-                        prob = bucket_probability_numpy(forecast, bucket.temp_low_c, bucket.temp_high_c, bucket.temp_unit)
+                        prob = bucket_probability_numpy(
+                            forecast, bucket.temp_low_c, bucket.temp_high_c, bucket.temp_unit
+                        )
                         bucket.yes_price = prob
                         bucket.no_price = 1.0 - prob
                         source = "forecast"
@@ -715,6 +732,7 @@ class BacktestEngine:
                 continue
             q = m.question
             import re
+
             match = re.search(r"(\d+)(?:\s*[-–]\s*(\d+))?\s*°([CF])", q)
             if match:
                 low_str = match.group(1)
@@ -743,17 +761,20 @@ class BacktestEngine:
             low = mean + (i * 2.0) - 1.0
             high = mean + (i * 2.0) + 1.0
             from pm_bot.core.weather import bucket_probability_numpy
+
             prob = bucket_probability_numpy(forecast, low, high, "C")
-            buckets.append(TemperatureBucket(
-                market_id=f"synth_{city}_{date}_{i}",
-                question=f"Temp {low:.0f}-{high:.0f}°C",
-                temp_low=low,
-                temp_high=high,
-                temp_unit="C",
-                yes_price=prob,
-                no_price=1.0 - prob,
-                volume=0.0,
-            ))
+            buckets.append(
+                TemperatureBucket(
+                    market_id=f"synth_{city}_{date}_{i}",
+                    question=f"Temp {low:.0f}-{high:.0f}°C",
+                    temp_low=low,
+                    temp_high=high,
+                    temp_unit="C",
+                    yes_price=prob,
+                    no_price=1.0 - prob,
+                    volume=0.0,
+                )
+            )
 
         return WeatherEvent(
             event_id=f"synth_{city}_{date}",
@@ -775,4 +796,5 @@ class BacktestEngine:
             high_f = bucket.temp_high_c * 1.8 + 32.0
             return low_f <= obs_f <= high_f
         from math import floor
+
         return floor(obs_c) == bucket.temp_low_c

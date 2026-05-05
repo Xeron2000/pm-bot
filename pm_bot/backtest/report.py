@@ -77,14 +77,16 @@ def export_csv(results: list[BacktestResult], path: str | Path) -> None:
             for t in r.trades:
                 if t.resolved:
                     running += t.pnl
-                writer.writerow([
-                    t.strategy,
-                    t.date,
-                    t.direction,
-                    t.bucket_key,
-                    f"{t.price:.4f}",
-                    f"{t.size_usd:.2f}",
-                    f"{t.cost:.4f}",
-                    f"{t.pnl:.2f}",
-                    f"{running:.2f}",
-                ])
+                writer.writerow(
+                    [
+                        t.strategy,
+                        t.date,
+                        t.direction,
+                        t.bucket_key,
+                        f"{t.price:.4f}",
+                        f"{t.size_usd:.2f}",
+                        f"{t.cost:.4f}",
+                        f"{t.pnl:.2f}",
+                        f"{running:.2f}",
+                    ]
+                )

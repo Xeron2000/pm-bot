@@ -53,7 +53,9 @@ def run_config(init: bool = False) -> None:
 
     sizing = file_config.get("sizing", {})
     if sizing:
-        console.print(f"\n[bold]Sizing:[/] max_single=${sizing.get('max_single', 5.0):.2f}, max_daily=${sizing.get('max_daily', 50.0):.2f}")
+        console.print(
+            f"\n[bold]Sizing:[/] max_single=${sizing.get('max_single', 5.0):.2f}, max_daily=${sizing.get('max_daily', 50.0):.2f}"
+        )
 
     clob = file_config.get("clob", {})
     has_creds = bool(clob.get("api_key"))
@@ -65,7 +67,9 @@ def run_config(init: bool = False) -> None:
     notifications = file_config.get("notifications", {})
     has_discord = bool(notifications.get("discord", {}).get("webhook_url"))
     has_telegram = bool(notifications.get("telegram", {}).get("bot_token"))
-    console.print(f"[bold]Notifications:[/] Discord={'✓' if has_discord else '✗'}, Telegram={'✓' if has_telegram else '✗'}")
+    console.print(
+        f"[bold]Notifications:[/] Discord={'✓' if has_discord else '✗'}, Telegram={'✓' if has_telegram else '✗'}"
+    )
 
     console.print(f"\n[dim]Config file: {config_path}[/dim]")
     console.print("[dim]Set --edge <value> to override all strategy edge thresholds[/dim]")

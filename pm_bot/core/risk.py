@@ -80,6 +80,7 @@ class RiskManager:
             paused = self.db.get_state(pause_key)
             if paused:
                 from datetime import datetime, timezone
+
                 try:
                     until = datetime.fromisoformat(paused)
                     if datetime.now(timezone.utc) < until:
@@ -92,7 +93,10 @@ class RiskManager:
                     pass
 
             from datetime import datetime, timezone, timedelta
-            until_str = (datetime.now(timezone.utc) + timedelta(minutes=self.consecutive_loss_pause_minutes)).isoformat()
+
+            until_str = (
+                datetime.now(timezone.utc) + timedelta(minutes=self.consecutive_loss_pause_minutes)
+            ).isoformat()
             self.db.set_state(pause_key, until_str)
             log.warning("consecutive_loss_pause", count=count, until=until_str)
             return RiskCheckResult(

@@ -17,6 +17,7 @@ class NegRiskSumStrategy(Strategy):
 
     def _taker_fee(self, price: float) -> float:
         from pm_bot.core.clob import compute_v2_taker_fee
+
         return min(compute_v2_taker_fee(self.TAKER_FEE_RATE_BPS, price, self.TAKER_FEE_EXPONENT), self.TAKER_FEE_MAX)
 
     def run(self, event: WeatherEvent, **kwargs) -> list[Recommendation]:
@@ -37,16 +38,18 @@ class NegRiskSumStrategy(Strategy):
                     if b.yes_price <= 0:
                         continue
                     size = bankroll * 0.25 * net_edge / len(active_buckets)
-                    recs.append(Recommendation(
-                        strategy=self.name,
-                        event=event,
-                        bucket=b,
-                        direction="YES",
-                        edge=net_edge / len(active_buckets),
-                        reasoning=f"ΣYES={sum_yes:.3f} < 0.98, risk-free arb (net edge={net_edge:.3f} after fees)",
-                        size_usd=size,
-                        kelly_fraction=net_edge / len(active_buckets) / (1.0 - b.yes_price) * 0.25,
-                    ))
+                    recs.append(
+                        Recommendation(
+                            strategy=self.name,
+                            event=event,
+                            bucket=b,
+                            direction="YES",
+                            edge=net_edge / len(active_buckets),
+                            reasoning=f"ΣYES={sum_yes:.3f} < 0.98, risk-free arb (net edge={net_edge:.3f} after fees)",
+                            size_usd=size,
+                            kelly_fraction=net_edge / len(active_buckets) / (1.0 - b.yes_price) * 0.25,
+                        )
+                    )
 
         elif sum_yes > 1.03:
             forecast = kwargs.get("forecast")
@@ -60,16 +63,18 @@ class NegRiskSumStrategy(Strategy):
                             continue
                         share = b.yes_price / sum_yes
                         size = bankroll * 0.25 * net_excess * share
-                        recs.append(Recommendation(
-                            strategy=self.name,
-                            event=event,
-                            bucket=b,
-                            direction="NO",
-                            edge=net_excess * share,
-                            reasoning=f"ΣYES={sum_yes:.3f} > 1.03, no forecast; buying NO on top bucket by YES price",
-                            size_usd=size,
-                            kelly_fraction=net_excess * share * 0.25,
-                        ))
+                        recs.append(
+                            Recommendation(
+                                strategy=self.name,
+                                event=event,
+                                bucket=b,
+                                direction="NO",
+                                edge=net_excess * share,
+                                reasoning=f"ΣYES={sum_yes:.3f} > 1.03, no forecast; buying NO on top bucket by YES price",
+                                size_usd=size,
+                                kelly_fraction=net_excess * share * 0.25,
+                            )
+                        )
             else:
                 overpriced = self._find_overpriced(active_buckets, forecast)
                 for b, model_prob in overpriced[:3]:
@@ -77,16 +82,18 @@ class NegRiskSumStrategy(Strategy):
                     if no_edge > 0.01:
                         net_edge = no_edge * (1.0 - self._taker_fee(b.yes_price))
                         size = bankroll * 0.25 * net_edge
-                        recs.append(Recommendation(
-                            strategy=self.name,
-                            event=event,
-                            bucket=b,
-                            direction="NO",
-                            edge=net_edge,
-                            reasoning=f"ΣYES={sum_yes:.3f} > 1.03, overpriced bucket (YES={b.yes_price:.2f}, model={model_prob:.2f})",
-                            size_usd=size,
-                            kelly_fraction=net_edge / b.no_price * 0.25,
-                        ))
+                        recs.append(
+                            Recommendation(
+                                strategy=self.name,
+                                event=event,
+                                bucket=b,
+                                direction="NO",
+                                edge=net_edge,
+                                reasoning=f"ΣYES={sum_yes:.3f} > 1.03, overpriced bucket (YES={b.yes_price:.2f}, model={model_prob:.2f})",
+                                size_usd=size,
+                                kelly_fraction=net_edge / b.no_price * 0.25,
+                            )
+                        )
 
         return recs
 
@@ -96,6 +103,7 @@ class NegRiskSumStrategy(Strategy):
         forecast: ForecastResult,
     ) -> list[tuple[TemperatureBucket, float]]:
         from pm_bot.core.weather import bucket_probability_numpy
+
         result: list[tuple[TemperatureBucket, float]] = []
         for b in buckets:
             if b.yes_price > 0:

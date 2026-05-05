@@ -90,6 +90,7 @@ async def run_trade(
 
         if observed:
             from typing import Any
+
             obs_map: dict[tuple[str, str], Any] = {}
             for city, mt in {(ev.city, ev.measure_type) for ev in events}:
                 obs = await fetch_observation(client, city, measure_type=mt)
@@ -116,6 +117,7 @@ async def run_trade(
         return
 
     from pm_bot.core.config_loader import get_sizing
+
     sizing = get_sizing(config)
     max_single = sizing["max_single"]
     max_daily = sizing["max_daily"]
@@ -160,8 +162,15 @@ async def run_trade(
                 order_id = str(result.get("orderID", result.get("order_id", "")))
                 console.print(f"[green]Order placed: {order_id[:16]}[/green]")
                 await notify(
-                    config, "created", rec.strategy, rec.direction,
-                    rec.city, rec.temp_label, price, rec.edge, order_id,
+                    config,
+                    "created",
+                    rec.strategy,
+                    rec.direction,
+                    rec.city,
+                    rec.temp_label,
+                    price,
+                    rec.edge,
+                    order_id,
                 )
             else:
                 console.print("[red]Order failed.[/red]")
@@ -178,7 +187,7 @@ async def fetch_forecast_at(
     model: str = "gfs_seamless",
 ) -> ForecastResult | None:
     from pm_bot.models.market import ForecastResult
-    from pm_bot.core.weather import OPEN_METEO_BASE, _MEMBER_KEYS
+    from pm_bot.core.weather import OPEN_METEO_BASE, _MEMBER_KEYS_MAX
 
     params: dict[str, str | int | float] = {
         "latitude": lat,
@@ -203,12 +212,13 @@ async def fetch_forecast_at(
     members: list[float] = []
     try:
         from pm_bot.core.weather import ENSEMBLE_BASE
+
         params_ens = {**params, "models": model}
         resp = await client.get(ENSEMBLE_BASE, params=params_ens)
         resp.raise_for_status()
         ens_data = resp.json()
         ens_daily = ens_data.get("daily", {})
-        for mk in _MEMBER_KEYS:
+        for mk in _MEMBER_KEYS_MAX:
             member_data = ens_daily.get(mk, [])
             if member_data:
                 v = member_data[0]
@@ -245,6 +255,7 @@ def _resolve_strategies(name: str) -> list[tuple[str, Strategy]]:
 
 def _setup_logging(debug: bool) -> None:
     import logging
+
     if debug:
         structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG))
     else:

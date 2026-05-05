@@ -12,6 +12,7 @@ class Strategy:
 
     def get_defaults(self) -> dict[str, float]:
         from pm_bot.models.config import STRATEGY_DEFAULTS
+
         return STRATEGY_DEFAULTS.get(self.name, {})
 
     def run(self, event: WeatherEvent, **kwargs) -> list[Recommendation]:
@@ -34,37 +35,51 @@ class Gopfan2Strategy(Strategy):
             if b.yes_price <= 0 or b.no_price <= 0:
                 continue
 
-            model_prob = bucket_probability_numpy(forecast, b.temp_low_c, b.temp_high_c, b.temp_unit) if forecast else None
+            model_prob = (
+                bucket_probability_numpy(forecast, b.temp_low_c, b.temp_high_c, b.temp_unit) if forecast else None
+            )
 
             if b.yes_price <= yes_max:
-                if model_prob is not None and model_prob > b.yes_price + 0.05:
-                    edge = model_prob - b.yes_price
+                if model_prob is not None:
+                    if model_prob > b.yes_price + 0.05:
+                        edge = model_prob - b.yes_price
+                    else:
+                        edge = 0.0
                 else:
-                    edge = 0.8 * (1.0 - b.yes_price) - 0.2 * b.yes_price
+                    edge = 0.0
                 if edge > 0:
-                    recs.append(Recommendation(
-                        strategy=self.name,
-                        event=event,
-                        bucket=b,
-                        direction="YES",
-                        edge=edge,
-                        reasoning=f"YES@{b.yes_price:.2f} ≤ {yes_max:.2f}" + (f", model={model_prob:.2f}" if model_prob else ""),
-                    ))
+                    recs.append(
+                        Recommendation(
+                            strategy=self.name,
+                            event=event,
+                            bucket=b,
+                            direction="YES",
+                            edge=edge,
+                            reasoning=f"YES@{b.yes_price:.2f} ≤ {yes_max:.2f}"
+                            + (f", model={model_prob:.2f}" if model_prob else ""),
+                        )
+                    )
 
             elif b.no_price >= no_min:
-                if model_prob is not None and (1.0 - model_prob) > b.no_price + 0.05:
-                    edge = (1.0 - model_prob) - b.no_price
+                if model_prob is not None:
+                    if (1.0 - model_prob) > b.no_price + 0.05:
+                        edge = (1.0 - model_prob) - b.no_price
+                    else:
+                        edge = 0.0
                 else:
-                    edge = 0.8 * b.no_price - 0.2 * (1.0 - b.no_price)
+                    edge = 0.0
                 if edge > 0:
-                    recs.append(Recommendation(
-                        strategy=self.name,
-                        event=event,
-                        bucket=b,
-                        direction="NO",
-                        edge=edge,
-                        reasoning=f"NO@{b.no_price:.2f} ≥ {no_min:.2f}" + (f", model={1 - model_prob:.2f}" if model_prob else ""),
-                    ))
+                    recs.append(
+                        Recommendation(
+                            strategy=self.name,
+                            event=event,
+                            bucket=b,
+                            direction="NO",
+                            edge=edge,
+                            reasoning=f"NO@{b.no_price:.2f} ≥ {no_min:.2f}"
+                            + (f", model={1 - model_prob:.2f}" if model_prob else ""),
+                        )
+                    )
 
         return recs
 

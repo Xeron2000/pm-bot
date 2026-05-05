@@ -91,6 +91,7 @@ class ForecastResult:
         if len(self.members) < 2:
             return 0.0
         import numpy as np
+
         return float(np.std(self.members))
 
 

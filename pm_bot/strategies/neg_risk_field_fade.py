@@ -19,6 +19,7 @@ class NegRiskFieldFadeStrategy(Strategy):
 
     def _taker_fee(self, price: float) -> float:
         from pm_bot.core.clob import compute_v2_taker_fee
+
         return min(compute_v2_taker_fee(self.TAKER_FEE_RATE_BPS, price, self.TAKER_FEE_EXPONENT), self.TAKER_FEE_MAX)
 
     def run(self, event: WeatherEvent, **kwargs) -> list[Recommendation]:
@@ -42,7 +43,7 @@ class NegRiskFieldFadeStrategy(Strategy):
         overpriced = self._rank_overpriced(active, forecast)
         recs: list[Recommendation] = []
 
-        for b, model_prob in overpriced[:self.MAX_NO_POSITIONS]:
+        for b, model_prob in overpriced[: self.MAX_NO_POSITIONS]:
             no_price = b.no_price
             if no_price < 0.02:
                 continue
@@ -58,16 +59,23 @@ class NegRiskFieldFadeStrategy(Strategy):
 
             if no_edge_after_fee > 0.005:
                 size = bankroll * 0.15 * no_edge_after_fee
-                recs.append(Recommendation(
-                    strategy=self.name,
-                    event=event,
-                    bucket=b,
-                    direction="NO",
-                    edge=no_edge_after_fee,
-                    reasoning=f"ΣYES={sum_yes:.3f} over-round, NO on YES={b.yes_price:.2f}" + (f", model={model_prob:.2f}" if model_prob is not None else f", ratio={b.yes_price / sum_yes:.2f}"),
-                    size_usd=size,
-                    kelly_fraction=no_edge_after_fee / no_price * 0.15,
-                ))
+                recs.append(
+                    Recommendation(
+                        strategy=self.name,
+                        event=event,
+                        bucket=b,
+                        direction="NO",
+                        edge=no_edge_after_fee,
+                        reasoning=f"ΣYES={sum_yes:.3f} over-round, NO on YES={b.yes_price:.2f}"
+                        + (
+                            f", model={model_prob:.2f}"
+                            if model_prob is not None
+                            else f", ratio={b.yes_price / sum_yes:.2f}"
+                        ),
+                        size_usd=size,
+                        kelly_fraction=no_edge_after_fee / no_price * 0.15,
+                    )
+                )
 
         return recs
 
@@ -78,6 +86,7 @@ class NegRiskFieldFadeStrategy(Strategy):
     ) -> list[tuple[TemperatureBucket, float | None]]:
         if forecast is not None:
             from pm_bot.core.weather import bucket_probability_numpy
+
             ranked: list[tuple[TemperatureBucket, float | None]] = []
             for b in buckets:
                 model_prob = bucket_probability_numpy(forecast, b.temp_low_c, b.temp_high_c, b.temp_unit)

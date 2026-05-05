@@ -80,8 +80,11 @@ class HistoricalDataFetcher:
         if row:
             members = json.loads(row["members_json"]) if row["members_json"] else []
             return ForecastResult(
-                city=city, date=date, model=model,
-                temp_high_c=row["temp_high_c"], members=members,
+                city=city,
+                date=date,
+                model=model,
+                temp_high_c=row["temp_high_c"],
+                members=members,
             )
 
         coords = CITY_COORDS.get(city)
@@ -124,8 +127,11 @@ class HistoricalDataFetcher:
                 ensemble_members.append(float(m_data[0]))
 
         result = ForecastResult(
-            city=city, date=date, model=model,
-            temp_high_c=temp_high, members=ensemble_members,
+            city=city,
+            date=date,
+            model=model,
+            temp_high_c=temp_high,
+            members=ensemble_members,
         )
 
         conn.execute(

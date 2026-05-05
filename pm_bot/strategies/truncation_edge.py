@@ -35,49 +35,60 @@ class TruncationEdgeStrategy(Strategy):
             no_edge = (1.0 - model_prob) - b.no_price
 
             if b.temp_low_c != float("-inf") and b.temp_high_c != float("inf"):
-                fractional_part = forecast.mean % 1.0
+                mean_val = forecast.mean
+                if b.temp_unit == "F":
+                    mean_val = mean_val * 1.8 + 32.0
+                fractional_part = mean_val % 1.0
                 near_boundary = fractional_part > 0.7 or fractional_part < 0.3
             else:
                 near_boundary = False
 
             if near_boundary and yes_edge >= edge_min:
-                recs.append(Recommendation(
-                    strategy=self.name,
-                    event=event,
-                    bucket=b,
-                    direction="YES",
-                    edge=yes_edge,
-                    reasoning=f"truncation edge near boundary (forecast={forecast.mean:.1f}°C, frac={fractional_part:.2f}), model_prob={model_prob:.2f}, market={b.yes_price:.2f}",
-                ))
+                recs.append(
+                    Recommendation(
+                        strategy=self.name,
+                        event=event,
+                        bucket=b,
+                        direction="YES",
+                        edge=yes_edge,
+                        reasoning=f"truncation edge near boundary (forecast={forecast.mean:.1f}°C, frac={fractional_part:.2f}), model_prob={model_prob:.2f}, market={b.yes_price:.2f}",
+                    )
+                )
 
             if near_boundary and no_edge >= edge_min:
-                recs.append(Recommendation(
-                    strategy=self.name,
-                    event=event,
-                    bucket=b,
-                    direction="NO",
-                    edge=no_edge,
-                    reasoning=f"truncation edge near boundary (forecast={forecast.mean:.1f}°C, frac={fractional_part:.2f}), model_prob={model_prob:.2f}, NO_edge={no_edge:.2f}",
-                ))
+                recs.append(
+                    Recommendation(
+                        strategy=self.name,
+                        event=event,
+                        bucket=b,
+                        direction="NO",
+                        edge=no_edge,
+                        reasoning=f"truncation edge near boundary (forecast={forecast.mean:.1f}°C, frac={fractional_part:.2f}), model_prob={model_prob:.2f}, NO_edge={no_edge:.2f}",
+                    )
+                )
 
             if yes_edge >= edge_min * 2 and not near_boundary:
-                recs.append(Recommendation(
-                    strategy=self.name,
-                    event=event,
-                    bucket=b,
-                    direction="YES",
-                    edge=yes_edge,
-                    reasoning=f"truncation-aware model_prob={model_prob:.2f} vs market={b.yes_price:.2f}, edge={yes_edge:.2f}",
-                ))
+                recs.append(
+                    Recommendation(
+                        strategy=self.name,
+                        event=event,
+                        bucket=b,
+                        direction="YES",
+                        edge=yes_edge,
+                        reasoning=f"truncation-aware model_prob={model_prob:.2f} vs market={b.yes_price:.2f}, edge={yes_edge:.2f}",
+                    )
+                )
 
             if no_edge >= edge_min * 2 and not near_boundary:
-                recs.append(Recommendation(
-                    strategy=self.name,
-                    event=event,
-                    bucket=b,
-                    direction="NO",
-                    edge=no_edge,
-                    reasoning=f"truncation-aware model_prob={model_prob:.2f}, NO_edge={no_edge:.2f}",
-                ))
+                recs.append(
+                    Recommendation(
+                        strategy=self.name,
+                        event=event,
+                        bucket=b,
+                        direction="NO",
+                        edge=no_edge,
+                        reasoning=f"truncation-aware model_prob={model_prob:.2f}, NO_edge={no_edge:.2f}",
+                    )
+                )
 
         return recs

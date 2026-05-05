@@ -59,14 +59,17 @@ async def run_watch(
                         lon = station_info.get("lon")
                         if lat is not None and lon is not None:
                             from pm_bot.cli.trade import fetch_forecast_at
+
                             afc = await fetch_forecast_at(client, float(lat), float(lon), ev.city, ev.date)
                             if afc:
                                 airport_forecasts[ev.city] = afc
 
                         from pm_bot.models.config import CITY_COORDS
+
                         city_coords = CITY_COORDS.get(ev.city)
                         if city_coords:
                             from pm_bot.cli.trade import fetch_forecast_at
+
                             cfc = await fetch_forecast_at(client, city_coords[0], city_coords[1], ev.city, ev.date)
                             if cfc:
                                 city_forecasts[ev.city] = cfc
@@ -88,6 +91,7 @@ async def run_watch(
 
                 if observed:
                     from typing import Any
+
                     obs_map: dict[tuple[str, str], Any] = {}
                     for city, mt in {(ev.city, ev.measure_type) for ev in events}:
                         obs = await fetch_observation(client, city, measure_type=mt)
@@ -174,6 +178,7 @@ def _resolve_strategies(name: str) -> list[tuple[str, Strategy]]:
 
 def _setup_logging(debug: bool) -> None:
     import logging
+
     if debug:
         structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG))
     else:

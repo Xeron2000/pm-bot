@@ -21,7 +21,9 @@ GAMMA_POSITIONS_URL = "https://data-api.polymarket.com/positions"
 
 def compute_v2_taker_fee(fee_rate_bps: int, price: float, exponent: float = 1.0) -> float:
     base = fee_rate_bps / 10000.0
-    return base * price * (price * (1.0 - price)) ** (exponent - 1.0) if exponent != 1.0 else base * price * (1.0 - price)
+    return (
+        base * price * (price * (1.0 - price)) ** (exponent - 1.0) if exponent != 1.0 else base * price * (1.0 - price)
+    )
 
 
 T = TypeVar("T")
@@ -33,7 +35,7 @@ def _retry_on_425(fn: Callable[[], T], max_retries: int = MAX_425_RETRIES) -> T:
             return fn()
         except httpx.HTTPStatusError as e:
             if e.response.status_code == 425 and attempt < max_retries:
-                wait = 2 ** attempt * 5
+                wait = 2**attempt * 5
                 log.warning("425_matching_engine_restart", attempt=attempt, retry_after_s=wait)
                 time.sleep(wait)
                 continue
@@ -291,6 +293,7 @@ class ClobTrader:
     def fetch_market_fee_rate_bps(self, condition_id: str) -> int | None:
         try:
             import httpx
+
             resp = httpx.get(
                 f"{CLOB_HOST}/markets/{condition_id}",
                 timeout=DEFAULT_HTTP_TIMEOUT,
@@ -348,6 +351,7 @@ class ClobTrader:
             return []
         try:
             from web3 import Web3
+
             wallet = Web3().eth.account.from_key(pk).address
         except Exception:
             return []
@@ -380,6 +384,7 @@ class ClobTrader:
         relayer = None
         try:
             from py_builder_relayer_client import RelayClient
+
             relayer = RelayClient()
         except Exception:
             pass
@@ -419,10 +424,12 @@ class ClobTrader:
 
         try:
             from poly_web3 import PolyWeb3Service
+
             client = self._get_client()
             relayer = None
             try:
                 from py_builder_relayer_client import RelayClient
+
                 relayer = RelayClient()
             except Exception:
                 pass

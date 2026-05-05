@@ -40,24 +40,27 @@ class EnsembleSpreadStrategy(Strategy):
             no_edge = (1.0 - model_prob) - b.no_price
 
             if yes_edge >= edge_min:
-                recs.append(Recommendation(
-                    strategy=self.name,
-                    event=event,
-                    bucket=b,
-                    direction="YES",
-                    edge=yes_edge,
-                    reasoning=f"wide spread (σ={std:.1f}°C), tail underpriced: model_prob={model_prob:.2f}, market={b.yes_price:.2f}",
-                ))
+                recs.append(
+                    Recommendation(
+                        strategy=self.name,
+                        event=event,
+                        bucket=b,
+                        direction="YES",
+                        edge=yes_edge,
+                        reasoning=f"wide spread (σ={std:.1f}°C), tail underpriced: model_prob={model_prob:.2f}, market={b.yes_price:.2f}",
+                    )
+                )
 
-            if (self.NO_ENTRY_LO <= b.no_price <= self.NO_ENTRY_HI
-                    and no_edge >= edge_min):
-                recs.append(Recommendation(
-                    strategy=self.name,
-                    event=event,
-                    bucket=b,
-                    direction="NO",
-                    edge=no_edge,
-                    reasoning=f"wide spread (σ={std:.1f}°C), NO entry: model_prob={model_prob:.2f}, no_price={b.no_price:.2f}, NO_edge={no_edge:.2f}",
-                ))
+            if self.NO_ENTRY_LO <= b.no_price <= self.NO_ENTRY_HI and no_edge >= edge_min:
+                recs.append(
+                    Recommendation(
+                        strategy=self.name,
+                        event=event,
+                        bucket=b,
+                        direction="NO",
+                        edge=no_edge,
+                        reasoning=f"wide spread (σ={std:.1f}°C), NO entry: model_prob={model_prob:.2f}, no_price={b.no_price:.2f}, NO_edge={no_edge:.2f}",
+                    )
+                )
 
         return recs

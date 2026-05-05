@@ -94,13 +94,15 @@ class MarketWsClient:
         best_ask = data.get("best_ask")
         bid = float(best_bid) if best_bid is not None else None
         ask = float(best_ask) if best_ask is not None else None
-        await self._queue.put(PriceUpdate(
-            token_id=asset_id,
-            best_bid=bid,
-            best_ask=ask,
-            event_type="best_bid_ask",
-            data=data,
-        ))
+        await self._queue.put(
+            PriceUpdate(
+                token_id=asset_id,
+                best_bid=bid,
+                best_ask=ask,
+                event_type="best_bid_ask",
+                data=data,
+            )
+        )
 
     async def _handle_price_change(self, data: dict) -> None:
         asset_id = data.get("asset_id", "")
@@ -108,39 +110,47 @@ class MarketWsClient:
         best_ask = data.get("best_ask")
         bid = float(best_bid) if best_bid is not None else None
         ask = float(best_ask) if best_ask is not None else None
-        await self._queue.put(PriceUpdate(
-            token_id=asset_id,
-            best_bid=bid,
-            best_ask=ask,
-            event_type="price_change",
-            data=data,
-        ))
+        await self._queue.put(
+            PriceUpdate(
+                token_id=asset_id,
+                best_bid=bid,
+                best_ask=ask,
+                event_type="price_change",
+                data=data,
+            )
+        )
 
     async def _handle_last_trade(self, data: dict) -> None:
         asset_id = data.get("asset_id", "")
         price = data.get("price")
-        await self._queue.put(PriceUpdate(
-            token_id=asset_id,
-            event_type="last_trade_price",
-            data={"price": float(price) if price else None, **data},
-        ))
+        await self._queue.put(
+            PriceUpdate(
+                token_id=asset_id,
+                event_type="last_trade_price",
+                data={"price": float(price) if price else None, **data},
+            )
+        )
 
     async def _handle_book(self, data: dict) -> None:
         asset_id = data.get("asset_id", data.get("market", ""))
-        await self._queue.put(PriceUpdate(
-            token_id=asset_id,
-            event_type="book",
-            data=data,
-        ))
+        await self._queue.put(
+            PriceUpdate(
+                token_id=asset_id,
+                event_type="book",
+                data=data,
+            )
+        )
 
     async def _send_subscribe(self, token_ids: list[str]) -> None:
         if not self._ws:
             return
-        msg = json.dumps({
-            "assets_ids": token_ids,
-            "type": "market",
-            "custom_feature_enabled": True,
-        })
+        msg = json.dumps(
+            {
+                "assets_ids": token_ids,
+                "type": "market",
+                "custom_feature_enabled": True,
+            }
+        )
         try:
             await self._ws.send(msg)  # type: ignore[union-attr]
             self._subscribed_ids.update(token_ids)
@@ -150,11 +160,13 @@ class MarketWsClient:
 
     async def subscribe(self, token_ids: list[str]) -> None:
         if self._ws:
-            msg = json.dumps({
-                "assets_ids": token_ids,
-                "operation": "subscribe",
-                "custom_feature_enabled": True,
-            })
+            msg = json.dumps(
+                {
+                    "assets_ids": token_ids,
+                    "operation": "subscribe",
+                    "custom_feature_enabled": True,
+                }
+            )
             try:
                 await self._ws.send(msg)  # type: ignore[union-attr]
                 self._subscribed_ids.update(token_ids)
@@ -168,10 +180,12 @@ class MarketWsClient:
         if not self._ws:
             self._subscribed_ids -= set(token_ids)
             return
-        msg = json.dumps({
-            "assets_ids": token_ids,
-            "operation": "unsubscribe",
-        })
+        msg = json.dumps(
+            {
+                "assets_ids": token_ids,
+                "operation": "unsubscribe",
+            }
+        )
         try:
             await self._ws.send(msg)  # type: ignore[union-attr]
             self._subscribed_ids -= set(token_ids)

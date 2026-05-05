@@ -61,6 +61,7 @@ async def fetch_metar(
 
 def _parse_temp_from_raw(raw: str) -> float | None:
     import re
+
     m = re.search(r"\s(M?\d{2})/(M?\d{2})\s", raw)
     if not m:
         return None

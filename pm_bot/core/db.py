@@ -138,8 +138,20 @@ class TradeDB:
                    (order_id, market_id, condition_id, strategy, side, price,
                     amount_usd, kelly_fraction, edge, city, temp_label, reasoning)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (order_id, market_id, condition_id, strategy, side, price,
-                 amount_usd, kelly_fraction_val, edge, city, temp_label, reasoning),
+                (
+                    order_id,
+                    market_id,
+                    condition_id,
+                    strategy,
+                    side,
+                    price,
+                    amount_usd,
+                    kelly_fraction_val,
+                    edge,
+                    city,
+                    temp_label,
+                    reasoning,
+                ),
             )
             conn.commit()
             return True
@@ -197,9 +209,7 @@ class TradeDB:
 
     def get_open_trades(self) -> list[dict[str, Any]]:
         conn = self._get_conn()
-        rows = conn.execute(
-            "SELECT * FROM trades WHERE fill_status = 'open' ORDER BY created_at DESC"
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM trades WHERE fill_status = 'open' ORDER BY created_at DESC").fetchall()
         return [dict(r) for r in rows]
 
     def get_daily_state(self, date: str | None = None) -> dict[str, Any]:
@@ -233,9 +243,7 @@ class TradeDB:
             cols = ["date"] + list(kwargs.keys())
             placeholders = ", ".join(["?"] * len(cols))
             vals = [date] + list(kwargs.values())
-            conn.execute(
-                f"INSERT INTO daily_state ({', '.join(cols)}) VALUES ({placeholders})", vals
-            )
+            conn.execute(f"INSERT INTO daily_state ({', '.join(cols)}) VALUES ({placeholders})", vals)
         conn.commit()
 
     def get_state(self, key: str) -> str | None:
@@ -266,9 +274,7 @@ class TradeDB:
 
     def get_recent_trades(self, limit: int = 50) -> list[dict[str, Any]]:
         conn = self._get_conn()
-        rows = conn.execute(
-            "SELECT * FROM trades ORDER BY created_at DESC LIMIT ?", (limit,)
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM trades ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
         return [dict(r) for r in rows]
 
     def check_duplicate_order(self, market_id: str, side: str) -> bool:
@@ -302,16 +308,12 @@ class TradeDB:
     def get_daily_pnl(self) -> float:
         conn = self._get_conn()
         today = _utc_today()
-        row = conn.execute(
-            "SELECT COALESCE(total_pnl, 0) FROM daily_state WHERE date = ?", (today,)
-        ).fetchone()
+        row = conn.execute("SELECT COALESCE(total_pnl, 0) FROM daily_state WHERE date = ?", (today,)).fetchone()
         return float(row[0]) if row else 0.0
 
     def reconcile_open_orders(self, api_order_ids: set[str]) -> None:
         conn = self._get_conn()
-        db_rows = conn.execute(
-            "SELECT order_id FROM trades WHERE fill_status = 'open'"
-        ).fetchall()
+        db_rows = conn.execute("SELECT order_id FROM trades WHERE fill_status = 'open'").fetchall()
         db_ids = {row[0] for row in db_rows}
 
         filled_or_cancelled = db_ids - api_order_ids

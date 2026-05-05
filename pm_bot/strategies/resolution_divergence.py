@@ -48,30 +48,34 @@ class ResolutionDivergenceStrategy(Strategy):
 
             if wu_p > nws_p:
                 if wu_p > b.yes_price + 0.02:
-                    recs.append(Recommendation(
-                        strategy=self.name,
-                        event=event,
-                        bucket=b,
-                        direction="YES",
-                        edge=edge,
-                        reasoning=f"WU prob {wu_p:.2f} > NWS {nws_p:.2f} (Δ={diverged:.2f}), market={b.yes_price:.2f}, dst={is_dst}, front={is_frontal}",
-                        size_usd=bankroll * min(edge, 0.015),
-                        kelly_fraction=edge / (1.0 - b.yes_price) * 0.25,
-                    ))
+                    recs.append(
+                        Recommendation(
+                            strategy=self.name,
+                            event=event,
+                            bucket=b,
+                            direction="YES",
+                            edge=edge,
+                            reasoning=f"WU prob {wu_p:.2f} > NWS {nws_p:.2f} (Δ={diverged:.2f}), market={b.yes_price:.2f}, dst={is_dst}, front={is_frontal}",
+                            size_usd=bankroll * min(edge, 0.015),
+                            kelly_fraction=edge / (1.0 - b.yes_price) * 0.25,
+                        )
+                    )
             else:
                 if wu_p < b.yes_price - 0.02:
                     no_edge = (1.0 - wu_p) - b.no_price
                     if no_edge > 0.02:
-                        recs.append(Recommendation(
-                            strategy=self.name,
-                            event=event,
-                            bucket=b,
-                            direction="NO",
-                            edge=no_edge * confidence,
-                            reasoning=f"WU prob {wu_p:.2f} < NWS {nws_p:.2f} (Δ={diverged:.2f}), market NO={b.no_price:.2f}, dst={is_dst}, front={is_frontal}",
-                            size_usd=bankroll * min(no_edge * confidence, 0.015),
-                            kelly_fraction=no_edge / b.no_price * 0.25,
-                        ))
+                        recs.append(
+                            Recommendation(
+                                strategy=self.name,
+                                event=event,
+                                bucket=b,
+                                direction="NO",
+                                edge=no_edge * confidence,
+                                reasoning=f"WU prob {wu_p:.2f} < NWS {nws_p:.2f} (Δ={diverged:.2f}), market NO={b.no_price:.2f}, dst={is_dst}, front={is_frontal}",
+                                size_usd=bankroll * min(no_edge * confidence, 0.015),
+                                kelly_fraction=no_edge / b.no_price * 0.25,
+                            )
+                        )
 
         return recs
 
@@ -89,6 +93,7 @@ class ResolutionDivergenceStrategy(Strategy):
         is_dst: bool,
     ) -> dict[int, float]:
         from pm_bot.core.weather import bucket_probability_numpy
+
         probs: dict[int, float] = {}
         for i, b in enumerate(buckets):
             low = b.temp_low_c
@@ -104,6 +109,7 @@ class ResolutionDivergenceStrategy(Strategy):
         is_frontal: bool,
     ) -> dict[int, float]:
         from pm_bot.core.weather import bucket_probability_numpy
+
         nws_forecast = ForecastResult(
             city=forecast.city,
             date=forecast.date,

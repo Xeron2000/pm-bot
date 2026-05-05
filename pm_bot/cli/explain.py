@@ -34,16 +34,18 @@ async def run_explain(market_id: str, debug: bool = False) -> None:
         console.print(f"[red]Market/event '{market_id}' not found. Try --closed to include settled markets.[/red]")
         return
 
-    console.print(Panel(
-        f"Event: {target.title}\n"
-        f"City:  {target.city}\n"
-        f"Date:  {target.date}\n"
-        f"Buckets: {len(target.buckets)}\n"
-        f"Sum(YES): {target.sum_yes:.3f}\n"
-        f"Airport: {target.airport_code or 'unknown'}",
-        title="Market Details",
-        border_style="blue",
-    ))
+    console.print(
+        Panel(
+            f"Event: {target.title}\n"
+            f"City:  {target.city}\n"
+            f"Date:  {target.date}\n"
+            f"Buckets: {len(target.buckets)}\n"
+            f"Sum(YES): {target.sum_yes:.3f}\n"
+            f"Airport: {target.airport_code or 'unknown'}",
+            title="Market Details",
+            border_style="blue",
+        )
+    )
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         forecast = await fetch_forecast(client, target.city, target.date)
@@ -76,6 +78,7 @@ async def _find_in_events(client: httpx.AsyncClient, market_id: str):
 
 def _setup_logging(debug: bool) -> None:
     import logging
+
     if debug:
         structlog.configure(wrapper_class=structlog.make_filtering_bound_logger(logging.DEBUG))
     else:

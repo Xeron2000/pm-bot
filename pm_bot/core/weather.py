@@ -16,7 +16,8 @@ ENSEMBLE_BASE = "https://ensemble-api.open-meteo.com/v1/ensemble"
 _forecast_cache: TTLCache[str, ForecastResult] = TTLCache(maxsize=128, ttl=CACHE_TTL["forecast"])
 
 # Open-Meteo GFS ensemble member key pattern
-_MEMBER_KEYS = [f"temperature_2m_max_member{i:02d}" for i in range(1, 36)]
+_MEMBER_KEYS_MAX = [f"temperature_2m_max_member{i:02d}" for i in range(1, 36)]
+_MEMBER_KEYS_MIN = [f"temperature_2m_min_member{i:02d}" for i in range(1, 36)]
 
 
 async def fetch_forecast(
@@ -54,8 +55,9 @@ async def fetch_forecast(
         log.error("weather_api_error", city=city, error=str(e))
         return None
 
+    temp_key = "temperature_2m_min" if measure_type == "low" else "temperature_2m_max"
     daily = data.get("daily", {})
-    temps = daily.get("temperature_2m_max", [])
+    temps = daily.get(temp_key, [])
     main_temp = float(temps[0]) if temps and isinstance(temps[0], (int, float)) else 0.0
 
     # Fetch ensemble members from separate endpoint
@@ -66,7 +68,8 @@ async def fetch_forecast(
         resp.raise_for_status()
         ens_data = resp.json()
         ens_daily = ens_data.get("daily", {})
-        for mk in _MEMBER_KEYS:
+        member_keys = _MEMBER_KEYS_MIN if measure_type == "low" else _MEMBER_KEYS_MAX
+        for mk in member_keys:
             member_data = ens_daily.get(mk, [])
             if member_data:
                 v = member_data[0]
@@ -123,6 +126,7 @@ def bucket_probability_numpy(
     mean = forecast.temp_high_c
     std = forecast.std if forecast.std > 0.5 else 2.5
     from math import erf, sqrt
+
     if temp_high_c >= _TAIL_BOUND:
         z = (temp_low_c - mean) / std
         p = 0.5 * (1.0 - erf(z / sqrt(2)))

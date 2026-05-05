@@ -54,7 +54,12 @@ class StationBiasDB:
         path.parent.mkdir(parents=True, exist_ok=True)
         data = {}
         for key, entry in self.entries.items():
-            data[key] = {"bias_c": entry.bias_c, "sample_count": entry.sample_count, "station": entry.station, "lead_time_bucket": entry.lead_time_bucket}
+            data[key] = {
+                "bias_c": entry.bias_c,
+                "sample_count": entry.sample_count,
+                "station": entry.station,
+                "lead_time_bucket": entry.lead_time_bucket,
+            }
         path.write_text(json.dumps(data, indent=2))
 
     @classmethod

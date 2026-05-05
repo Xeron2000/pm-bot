@@ -6,10 +6,18 @@ import math
 def calculate_metrics(trades: list, bankroll_series: list[float]) -> dict[str, float]:
     resolved = [t for t in trades if t.resolved]
     if not resolved:
-        return {k: 0.0 for k in (
-            "sharpe", "sortino", "max_drawdown",
-            "win_rate", "avg_win", "avg_loss", "brier_score",
-        )}
+        return {
+            k: 0.0
+            for k in (
+                "sharpe",
+                "sortino",
+                "max_drawdown",
+                "win_rate",
+                "avg_win",
+                "avg_loss",
+                "brier_score",
+            )
+        }
 
     pnls = [t.pnl for t in resolved]
     wins = [p for p in pnls if p > 0]
@@ -70,7 +78,7 @@ def _sortino(daily_returns: list[float]) -> float:
     downside = [r for r in daily_returns if r < 0]
     if not downside:
         return float("inf") if mean_r > 0 else 0.0
-    ds_var = sum(r ** 2 for r in downside) / len(downside)
+    ds_var = sum(r**2 for r in downside) / len(downside)
     ds_std = math.sqrt(ds_var) if ds_var > 0 else 0.0
     if ds_std == 0:
         return 0.0
