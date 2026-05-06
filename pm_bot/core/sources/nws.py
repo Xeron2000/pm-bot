@@ -38,7 +38,7 @@ async def fetch_nws_forecast(
         resp.raise_for_status()
         grid_data = resp.json()
     except httpx.HTTPError as e:
-        log.warning("nws_points_failed", city=city, error=str(e))
+        log.debug("nws_points_failed", city=city, error=str(e))
         return None
 
     props = grid_data.get("properties", {})

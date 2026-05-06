@@ -259,7 +259,7 @@ class ClobTrader:
             orders = client.get_open_orders(params)  # type: ignore[attr-defined]
             return orders if isinstance(orders, list) else []  # type: ignore[no-any-return]
         except Exception as e:
-            log.error("get_orders_failed", error=str(e))
+            log.warning("get_orders_failed", error=str(e))
             return []
 
     def get_order_status(self, order_id: str) -> dict | None:
