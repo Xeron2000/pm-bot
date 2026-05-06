@@ -479,3 +479,39 @@ Added dry-run mode with PaperTradeDB (00 bankroll, Kelly=0.15, SL=20%), RiskDB p
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: Deploy dry-run daemon to rn server, log cleanup
+
+**Date**: 2026-05-06
+**Task**: Deploy dry-run daemon to rn server, log cleanup
+**Branch**: `main`
+
+### Summary
+
+Deployed pm-bot dry-run daemon to rn server (systemd service, logrotate hourly/5M/2copies). Fixed: bankroll-scaled position limits (max_single=15% bankroll), PaperTradeDB implements RiskDB protocol, NWS 404 downgraded to debug, CLOB order fetch to warning. Paper trading running: 10 open positions, 00 bankroll, gopfan2 tail signals active.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1519030` | (see git log) |
+| `9011d50` | (see git log) |
+| `2055ae1` | (see git log) |
+| `03f62bc` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
