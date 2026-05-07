@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 15
-- **Last Active**: 2026-05-06
+- **Total Sessions**: 16
+- **Last Active**: 2026-05-07
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~517 | Active |
+| `journal-1.md` | ~552 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 16 | 2026-05-07 | Expand weather city universe to 36 and comprehensive backtest | `fa89f46`, `cc4be95`, `67f98bf` | `main` |
 | 15 | 2026-05-06 | Deploy dry-run daemon to rn server, log cleanup | `1519030`, `9011d50`, `2055ae1`, `03f62bc` | `main` |
 | 14 | 2026-05-06 | Dry-run paper trading daemon, AWS deployment | `9011d50`, `2055ae1`, `03f62bc`, `0b98936`, `ec6bacd` | `main` |
 | 13 | 2026-05-06 | ERA5 bias fix + ensemble calibration + exhaustive grid search | `c3599b4` | `main` |
