@@ -550,3 +550,39 @@ Expanded Polymarket weather cities from 14 to 36 (added Beijing, Madrid, Welling
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: Fix P&L bug, add realistic spread, remove unviable strategies
+
+**Date**: 2026-05-07
+**Task**: Fix P&L bug, add realistic spread, remove unviable strategies
+**Branch**: `main`
+
+### Summary
+
+Fixed critical NO P&L formula inversion, added realistic Polymarket orderbook spread model (--spread param), discovered all mid-bucket strategies are negative EV with real bid/ask (/bin/bash.01//bin/bash.99). Removed 5 unviable strategies (neg_risk_field_fade, neg_risk_sum, truncation_edge, ensemble_spread, resolution_div), kept only gopfan2 modified for tail-YES only. Updated trading-config spec with 4 pitfalls documented. Realistic return estimate: ~22%/year via tail-YES lottery tickets.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9e7f009` | (see git log) |
+| `73c11a6` | (see git log) |
+| `69ef7ce` | (see git log) |
+| `97e0b57` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

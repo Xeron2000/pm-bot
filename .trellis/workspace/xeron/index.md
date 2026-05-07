@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 16
+- **Total Sessions**: 17
 - **Last Active**: 2026-05-07
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~552 | Active |
+| `journal-1.md` | ~588 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 17 | 2026-05-07 | Fix P&L bug, add realistic spread, remove unviable strategies | `9e7f009`, `73c11a6`, `69ef7ce`, `97e0b57` | `main` |
 | 16 | 2026-05-07 | Expand weather city universe to 36 and comprehensive backtest | `fa89f46`, `cc4be95`, `67f98bf` | `main` |
 | 15 | 2026-05-06 | Deploy dry-run daemon to rn server, log cleanup | `1519030`, `9011d50`, `2055ae1`, `03f62bc` | `main` |
 | 14 | 2026-05-06 | Dry-run paper trading daemon, AWS deployment | `9011d50`, `2055ae1`, `03f62bc`, `0b98936`, `ec6bacd` | `main` |
