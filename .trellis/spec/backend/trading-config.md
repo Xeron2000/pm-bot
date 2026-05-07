@@ -11,6 +11,7 @@
 **症状**：回测显示+57,000%回报，NO方向交易盈亏反转。
 
 **原因**：NO方向P&L公式写反了：
+
 ```python
 # ❌ 错误 (旧代码)
 raw_pnl = size * effective_price if not hit else -size * (1.0 - effective_price)
@@ -24,6 +25,7 @@ raw_pnl = size * (1.0 - effective_price) if not hit else -size * effective_price
 **修复位置**：`pm_bot/backtest/engine.py` 两处（run_real 和 run_portfolio）
 
 **验证方法**：
+
 ```python
 # NO at $0.990, bucket不发生(NO赢):
 # 你付 $0.990/份, 赢了拿 $1.00/份, 利润 = $0.01/份
@@ -35,6 +37,7 @@ raw_pnl = size * (1.0 - effective_price) if not hit else -size * effective_price
 ### 踩坑2：用mid price成交
 
 **症状**：回测假设你能以mid price成交，但Polymarket订单簿实际是：
+
 ```
 YES bid=$0.010  YES ask=$0.990
 NO  bid=$0.010  NO  ask=$0.990
@@ -60,6 +63,7 @@ mid = (0.010 + 0.990) / 2 = $0.500
 **症状**：spread存在时Kelly sizing过高，因为payout被高估。
 
 **原因**：
+
 ```python
 # ❌ 用mid price算payout
 kelly_size(edge=0.10, yes_price=0.30)  # payout = 0.70
@@ -75,6 +79,7 @@ kelly_size(edge=0.10, yes_price=0.545) # payout = 0.455
 ### 踩坑4：中部桶交易全部负EV
 
 **原因**：Polymarket天气市场的订单簿结构使得中部桶不可能盈利：
+
 - 买YES: 付$0.990 ask, 赢了赚$0.010, 输了亏$0.990
 - 买NO: 付$0.990 ask, 赢了赚$0.010, 输了亏$0.990
 - **风险回报比 99:1**，需要>99%胜率才能break even
@@ -100,6 +105,7 @@ kelly_size(edge=0.10, yes_price=0.545) # payout = 0.455
 **机制**：买极端温度桶的NO ($0.01/份)，赌极端温度不会发生。
 
 **为什么有效**：
+
 - 极端温度发生概率 <5% → NO胜率 >95%
 - 赢了赚$0.99/份，输了亏$0.01/份
 - 风险回报比 1:99，期望值极高
@@ -113,6 +119,7 @@ kelly_size(edge=0.10, yes_price=0.545) # payout = 0.455
 | resolution_div | 74 | +$7,021 | 95.9% |
 
 **执行问题**：
+
 - 你挂$0.01买单买NO
 - 谁会$0.01卖出NO？几乎没人（因为大家都知道NO大概率赢）
 - **成交率极低 (<1%)**
@@ -125,17 +132,20 @@ kelly_size(edge=0.10, yes_price=0.545) # payout = 0.455
 **机制**：买极端温度桶的YES ($0.01/份)，赌极端温度会发生。
 
 **为什么边际可行**：
+
 - 极端温度发生概率 3-5% → YES胜率 3-5%
 - 赢了赚$0.99/份，输了亏$0.01/份
 - EV(5%) = 0.05 × $0.99 - 0.95 × $0.01 = **+$0.04/份**
 - EV(3%) = 0.03 × $0.99 - 0.97 × $0.01 = **+$0.02/份**
 
 **执行可行性**：
+
 - 有人愿意$0.01卖出YES（因为95%概率变废纸）
 - 成交率可能 20-30%
 - 但EV太低，每份只赚$0.02-0.04
 
 **实际收益估算**：
+
 ```
 34城市 × 2尾部桶 = 68个挂单/天
 30%成交率 = 20笔/天
@@ -151,6 +161,7 @@ kelly_size(edge=0.10, yes_price=0.545) # payout = 0.455
 **原因**：Polymarket订单簿bid=$0.010/ask=$0.990，中部桶只能以$0.990买入，风险回报比99:1。
 
 **受影响的策略**：
+
 - gopfan2 的 NO mid-bucket trades
 - neg_risk_field_fade 的 mid-bucket trades
 - neg_risk_sum 的 mid-bucket trades
@@ -173,14 +184,14 @@ pm-bot backtest [OPTIONS]
 
 ## 策略排名 (修正后, spread=0.99)
 
-| 策略 | 总P&L | 尾部NO P&L | 尾部YES P&L | 中部桶 P&L | 有效性 |
-|------|-------|-----------|-------------|-----------|--------|
-| neg_risk_field_fade | +$91,889 | +$99,275 | $0 | -$7,386 | ⭐ 最强 |
-| neg_risk_sum | +$24,356 | +$34,694 | +$267 | -$10,606 | ⭐ 强 |
-| truncation_edge | +$16,433 | +$28,665 | +$7,805 | -$20,037 | ⚠️ 中部桶拖累严重 |
-| gopfan2 | +$906 | $0 | +$7,405 | -$6,498 | ⚠️ 仅尾部YES微利 |
-| resolution_div | +$2,908 | +$7,021 | +$1,518 | -$5,630 | ⚠️ 中部桶拖累 |
-| ensemble_spread | -$11 | $0 | +$6,481 | -$6,493 | ❌ 不可用 |
+| 策略                | 总P&L    | 尾部NO P&L | 尾部YES P&L | 中部桶 P&L | 有效性            |
+| ------------------- | -------- | ---------- | ----------- | ---------- | ----------------- |
+| neg_risk_field_fade | +$91,889 | +$99,275   | $0          | -$7,386    | ⭐ 最强           |
+| neg_risk_sum        | +$24,356 | +$34,694   | +$267       | -$10,606   | ⭐ 强             |
+| truncation_edge     | +$16,433 | +$28,665   | +$7,805     | -$20,037   | ⚠️ 中部桶拖累严重 |
+| gopfan2             | +$906    | $0         | +$7,405     | -$6,498    | ⚠️ 仅尾部YES微利  |
+| resolution_div      | +$2,908  | +$7,021    | +$1,518     | -$5,630    | ⚠️ 中部桶拖累     |
+| ensemble_spread     | -$11     | $0         | +$6,481     | -$6,493    | ❌ 不可用         |
 
 ---
 
@@ -206,25 +217,28 @@ pm-bot backtest [OPTIONS]
 ## Polymarket Weather City Universe (36 cities)
 
 ### Tier 1 — Very High Liquidity ($6M+)
+
 Hong Kong, Shanghai, NYC, Tokyo, Beijing, London
 
 ### Tier 2 — High Liquidity ($3–5M)
+
 Madrid, Taipei, Seoul, Wellington, Miami, LA, Chicago, Milan, Paris, Wuhan, Denver, Munich, Austin, Moscow, Warsaw, San Francisco
 
 ### Tier 3 — Medium Liquidity ($2–3M)
+
 Istanbul, Jakarta, Mexico City, Atlanta, Dallas, Amsterdam, Busan, Seattle, Helsinki, Lagos, Toronto, Buenos Aires, Cape Town
 
 ---
 
 ## 参数范围
 
-| 参数 | 推荐值 | 说明 |
-|------|--------|------|
-| kelly | 0.25 | 影响很小（max_pos限制了仓位） |
-| stop_loss | 0.85 | 略紧于0.90，释放资金更快 |
-| max_pos | 10% | 单仓上限 |
-| spread | 0.99 | 模拟真实订单簿 |
-| cities | 34个全部 | 最大化市场覆盖 |
+| 参数      | 推荐值   | 说明                          |
+| --------- | -------- | ----------------------------- |
+| kelly     | 0.25     | 影响很小（max_pos限制了仓位） |
+| stop_loss | 0.85     | 略紧于0.90，释放资金更快      |
+| max_pos   | 10%      | 单仓上限                      |
+| spread    | 0.99     | 模拟真实订单簿                |
+| cities    | 34个全部 | 最大化市场覆盖                |
 
 ---
 

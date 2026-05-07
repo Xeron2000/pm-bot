@@ -20,7 +20,6 @@ from pm_bot.core.aggregation import fetch_all_sources
 from pm_bot.core.clob import ClobTrader
 from pm_bot.core.config_loader import (
     get_sizing,
-    get_station_for_city,
     load_config,
     get_notifications,
 )
@@ -31,7 +30,7 @@ from pm_bot.core.polymarket import fetch_weather_events
 from pm_bot.core.risk import RiskManager, RiskCheckResult
 from pm_bot.core.weather import fetch_forecast
 from pm_bot.core.observation import fetch_observation, filter_recommendations
-from pm_bot.models.config import DEFAULT_CITIES, STRATEGY_DEFAULTS, resolve_city_alias, CITY_COORDS
+from pm_bot.models.config import DEFAULT_CITIES, STRATEGY_DEFAULTS, resolve_city_alias
 from pm_bot.models.forecast import ConsensusForecast
 from pm_bot.models.market import Recommendation, ForecastResult
 from pm_bot.strategies.base import ALL_STRATEGIES
@@ -217,20 +216,7 @@ class TradingDaemon:
                     if ev.city in forecasts:
                         kwargs["forecast"] = forecasts[ev.city]
                     if strat_name == "ensemble_spread":
-                        kwargs["config"] = self.config
-                        station_info = get_station_for_city(self.config, ev.city)
-                        if station_info:
-                            lat = station_info.get("lat")
-                            lon = station_info.get("lon")
-                            if lat is not None and lon is not None:
-                                kwargs["airport_forecast"] = await _fetch_forecast_at(
-                                    client, float(lat), float(lon), ev.city, ev.date
-                                )
-                        city_coords = CITY_COORDS.get(ev.city)
-                        if city_coords:
-                            kwargs["city_forecast"] = await _fetch_forecast_at(
-                                client, city_coords[0], city_coords[1], ev.city, ev.date
-                            )
+                        pass  # strategy removed
 
                     recs = strat.run(ev, **kwargs)
 

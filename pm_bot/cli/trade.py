@@ -84,7 +84,7 @@ async def run_trade(
                 if ev.city in forecasts:
                     kwargs["forecast"] = forecasts[ev.city]
                 if strat_name == "ensemble_spread":
-                    kwargs["config"] = config
+                    pass  # strategy removed
                 recs = strat.run(ev, **kwargs)
                 if edge_override is not None:
                     recs = [r for r in recs if r.edge >= edge_override]

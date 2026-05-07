@@ -1,11 +1,6 @@
 from __future__ import annotations
 
 from pm_bot.strategies.base import Strategy, ALL_STRATEGIES, Gopfan2Strategy
-from pm_bot.strategies.resolution_divergence import ResolutionDivergenceStrategy
-from pm_bot.strategies.neg_risk_sum import NegRiskSumStrategy
-from pm_bot.strategies.truncation_edge import TruncationEdgeStrategy
-from pm_bot.strategies.ensemble_spread import EnsembleSpreadStrategy
-from pm_bot.strategies.neg_risk_field_fade import NegRiskFieldFadeStrategy
 from pm_bot.models.market import (
     TemperatureBucket,
     WeatherEvent,
@@ -28,7 +23,7 @@ def _make_event(buckets, city="New York", measure_type="high"):
 def _make_bucket(temp_low, temp_high, temp_unit="C", yes_price=0.2, market_id="b1"):
     return TemperatureBucket(
         market_id=market_id,
-        question=f"{temp_low}°C",
+        question=f"{temp_low}\u00b0C",
         temp_low=float(temp_low),
         temp_high=float(temp_high),
         temp_unit=temp_unit,
@@ -53,17 +48,18 @@ def _make_forecast(temp_high_c=25.0, city="New York", std=None, members=None):
 
 
 class TestStrategyRegistry:
-    def test_all_active_strategies_registered(self):
-        active = ["gopfan2", "resolution_div", "neg_risk_sum", "truncation_edge", "ensemble_spread", "neg_risk_field_fade"]
-        for name in active:
-            assert name in ALL_STRATEGIES
+    def test_only_gopfan2_registered(self):
+        assert list(ALL_STRATEGIES.keys()) == ["gopfan2"]
 
     def test_registry_instances(self):
         assert isinstance(ALL_STRATEGIES["gopfan2"], Gopfan2Strategy)
-        assert isinstance(ALL_STRATEGIES["truncation_edge"], TruncationEdgeStrategy)
 
     def test_no_deleted_strategies(self):
-        deleted = ["narrow_no", "sum_arb", "metar_obs", "metar_lock", "mean_reversion"]
+        deleted = [
+            "narrow_no", "sum_arb", "metar_obs", "metar_lock", "mean_reversion",
+            "neg_risk_field_fade", "neg_risk_sum", "truncation_edge",
+            "ensemble_spread", "resolution_div",
+        ]
         for name in deleted:
             assert name not in ALL_STRATEGIES
 
@@ -107,121 +103,30 @@ class TestGopfan2Strategy:
         recs = strategy.run(event, forecast=forecast)
         assert all(r.edge > 0 for r in recs)
 
-
-class TestTruncationEdgeStrategy:
-    def test_boundary_bucket_signal(self):
+    def test_only_tail_buckets(self):
+        """gopfan2 should only trade buckets with yes_price <= 0.15."""
         buckets = [
-            _make_bucket(24, 24, yes_price=0.40, market_id="b24"),
-            _make_bucket(25, 25, yes_price=0.35, market_id="b25"),
-            _make_bucket(26, 26, yes_price=0.25, market_id="b26"),
-        ]
-        event = _make_event(buckets)
-        forecast = _make_forecast(temp_high_c=25.3)
-        strategy = TruncationEdgeStrategy()
-        recs = strategy.run(event, forecast=forecast)
-        frac_25 = 25.3 - 25.0
-        if frac_25 < 0.3 or frac_25 > 0.7:
-            assert len(recs) > 0
-
-    def test_no_signal_at_0_5(self):
-        buckets = [_make_bucket(i, i, yes_price=0.20, market_id=f"b{i}") for i in range(20, 30)]
-        event = _make_event(buckets)
-        forecast = _make_forecast(temp_high_c=25.5)
-        strategy = TruncationEdgeStrategy()
-        recs = strategy.run(event, forecast=forecast)
-        for r in recs:
-            assert r.edge > 0
-
-    def test_min_edge_threshold(self):
-        buckets = [_make_bucket(25, 25, yes_price=0.40, market_id="b25")]
-        event = _make_event(buckets)
-        forecast = _make_forecast(temp_high_c=25.1)
-        strategy = TruncationEdgeStrategy()
-        recs = strategy.run(event, forecast=forecast)
-        for r in recs:
-            assert r.edge >= 0.03
-
-
-class TestEnsembleSpreadStrategy:
-    def test_high_spread_signal(self):
-        members = [20.0, 22.0, 25.0, 28.0, 30.0, 21.0, 29.0]
-        buckets = [
-            _make_bucket(-999, 22, yes_price=0.05, market_id="tail_low"),
-            _make_bucket(22, 22, yes_price=0.10, market_id="b22"),
-            _make_bucket(23, 23, yes_price=0.15, market_id="b23"),
-            _make_bucket(24, 24, yes_price=0.20, market_id="b24"),
-            _make_bucket(25, 25, yes_price=0.20, market_id="b25"),
-            _make_bucket(26, 26, yes_price=0.15, market_id="b26"),
-            _make_bucket(999, 999, yes_price=0.15, market_id="tail_high"),
-        ]
-        event = _make_event(buckets)
-        forecast = _make_forecast(temp_high_c=25.0, members=members)
-        strategy = EnsembleSpreadStrategy()
-        recs = strategy.run(event, forecast=forecast)
-        std = forecast.std
-        if std >= 1.5:
-            assert len(recs) > 0
-
-    def test_low_spread_no_signal(self):
-        members = [24.8, 25.0, 25.1, 25.0, 24.9, 25.2, 25.0]
-        buckets = [_make_bucket(i, i, yes_price=0.20, market_id=f"b{i}") for i in range(23, 28)]
-        event = _make_event(buckets)
-        forecast = _make_forecast(temp_high_c=25.0, members=members)
-        strategy = EnsembleSpreadStrategy()
-        recs = strategy.run(event, forecast=forecast)
-        assert len(recs) == 0 or all(r.edge > 0 for r in recs)
-
-
-class TestNegRiskSumStrategy:
-    def test_sum_yes_below_one(self):
-        buckets = [
-            _make_bucket(20, 20, yes_price=0.30, market_id="b20"),
-            _make_bucket(21, 21, yes_price=0.30, market_id="b21"),
-            _make_bucket(22, 22, yes_price=0.30, market_id="b22"),
-            _make_bucket(999, 999, yes_price=0.05, market_id="tail"),
-        ]
-        event = _make_event(buckets)
-        forecast = _make_forecast(temp_high_c=21.0)
-        strategy = NegRiskSumStrategy()
-        recs = strategy.run(event, forecast=forecast)
-        assert len(recs) > 0
-
-
-class TestNegRiskFieldFadeStrategy:
-    def test_over_round_signal(self):
-        buckets = [
-            _make_bucket(20, 20, yes_price=0.30, market_id="b20"),
-            _make_bucket(21, 21, yes_price=0.30, market_id="b21"),
-            _make_bucket(22, 22, yes_price=0.30, market_id="b22"),
-            _make_bucket(23, 23, yes_price=0.20, market_id="b23"),
-        ]
-        event = _make_event(buckets)
-        forecast = _make_forecast(temp_high_c=21.5)
-        strategy = NegRiskFieldFadeStrategy()
-        recs = strategy.run(event, forecast=forecast)
-        if event.sum_yes > 1.02:
-            assert len(recs) > 0
-
-    def test_no_signal_when_sum_below_one(self):
-        buckets = [
-            _make_bucket(20, 20, yes_price=0.10, market_id="b20"),
+            _make_bucket(-999, 20, yes_price=0.03, market_id="tail_low"),
             _make_bucket(21, 21, yes_price=0.10, market_id="b21"),
-            _make_bucket(22, 22, yes_price=0.10, market_id="b22"),
+            _make_bucket(22, 22, yes_price=0.20, market_id="b22"),
+            _make_bucket(23, 23, yes_price=0.30, market_id="b23"),
         ]
         event = _make_event(buckets)
         forecast = _make_forecast(temp_high_c=21.0)
-        strategy = NegRiskFieldFadeStrategy()
+        strategy = Gopfan2Strategy()
         recs = strategy.run(event, forecast=forecast)
-        assert len(recs) == 0 or all(r.edge > 0 for r in recs)
+        for r in recs:
+            assert r.bucket.yes_price <= 0.15, f"Should not trade bucket with yes_price={r.bucket.yes_price}"
 
-
-class TestResolutionDivergenceStrategy:
-    def test_basic_run(self):
+    def test_no_no_direction(self):
+        """gopfan2 should only generate YES recommendations."""
         buckets = [
-            _make_bucket(i, i, yes_price=0.20, market_id=f"b{i}") for i in range(20, 28)
+            _make_bucket(-999, 20, yes_price=0.03, market_id="tail_low"),
+            _make_bucket(999, 999, yes_price=0.05, market_id="tail_high"),
         ]
         event = _make_event(buckets)
-        forecast = _make_forecast(temp_high_c=24.0)
-        strategy = ResolutionDivergenceStrategy()
+        forecast = _make_forecast(temp_high_c=25.0)
+        strategy = Gopfan2Strategy()
         recs = strategy.run(event, forecast=forecast)
-        assert isinstance(recs, list)
+        for r in recs:
+            assert r.direction == "YES", f"Should not have NO direction, got {r.direction}"

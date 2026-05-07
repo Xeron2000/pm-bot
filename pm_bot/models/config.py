@@ -97,12 +97,7 @@ DEFAULT_CITIES = [
 ]
 
 STRATEGY_DEFAULTS: dict[str, dict[str, float]] = {
-    "gopfan2": {"yes_max": 0.15, "no_min": 0.45},
-    "resolution_div": {"bankroll": 100.0},
-    "neg_risk_sum": {"bankroll": 100.0},
-    "truncation_edge": {"edge_min": 0.03},
-    "ensemble_spread": {"edge_min": 0.05},
-    "neg_risk_field_fade": {"bankroll": 100.0},
+    "gopfan2": {"yes_max": 0.15},
 }
 
 CACHE_TTL: dict[str, int] = {
