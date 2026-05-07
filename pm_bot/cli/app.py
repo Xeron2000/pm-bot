@@ -171,6 +171,9 @@ def daemon_start_cmd(
     strategies: Optional[str] = typer.Option(
         None, "--strategies", "-s", help="Comma-separated strategy names (default: all)"
     ),
+    cities: Optional[str] = typer.Option(
+        None, "--cities", "-c", help="Comma-separated city names/aliases; required for dry-run unless daemon.cities is configured"
+    ),
     kelly: Optional[float] = typer.Option(None, "--kelly", "-k", help="Kelly fraction override (e.g. 0.15)"),
     stop_loss: Optional[float] = typer.Option(None, "--stop-loss", help="Stop-loss fraction override (e.g. 0.2)"),
     bankroll: Optional[float] = typer.Option(None, "--bankroll", "-b", help="Starting bankroll (default: 100 dry-run, 500 live)"),
@@ -179,15 +182,16 @@ def daemon_start_cmd(
     from pm_bot.cli.daemon import daemon_start
 
     strat_names = [s.strip() for s in strategies.split(",") if s.strip()] if strategies else None
+    city_names = [c.strip() for c in cities.split(",") if c.strip()] if cities else None
 
     if kelly is not None:
         os.environ["PM_BOT_KELLY"] = str(kelly)
     if stop_loss is not None:
-        os.environ.setdefault("PM_BOT_STOP_LOSS", str(stop_loss))
+        os.environ["PM_BOT_STOP_LOSS"] = str(stop_loss)
     if bankroll is not None:
         os.environ["PM_BOT_BANKROLL"] = str(bankroll)
 
-    asyncio.run(daemon_start(debug=debug, dry_run=dry_run, strategy_names=strat_names))
+    asyncio.run(daemon_start(debug=debug, dry_run=dry_run, strategy_names=strat_names, cities=city_names))
 
 
 @daemon_app.command("stop")

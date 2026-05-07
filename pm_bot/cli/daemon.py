@@ -5,6 +5,7 @@ import json
 import os
 import signal
 import time
+import uuid
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ import structlog
 from rich.console import Console
 from rich.table import Table
 
+from pm_bot.backtest.costs import FillModel
 from pm_bot.core.aggregation import fetch_all_sources
 from pm_bot.core.clob import ClobTrader
 from pm_bot.core.config_loader import (
@@ -44,7 +46,13 @@ CONFIG_RELOAD_FLAG = Path.home() / ".pm-bot" / ".reload_config"
 
 
 class TradingDaemon:
-    def __init__(self, config: dict, dry_run: bool = False, strategy_names: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        config: dict,
+        dry_run: bool = False,
+        strategy_names: list[str] | None = None,
+        cities: list[str] | None = None,
+    ) -> None:
         self.config = config
         self.dry_run = dry_run
         self.db = TradeDB()
@@ -57,25 +65,43 @@ class TradingDaemon:
         else:
             self.strategies = ALL_STRATEGIES
 
+        configured_cities = config.get("daemon", {}).get("cities") or config.get("live", {}).get("cities")
+        if isinstance(configured_cities, str):
+            configured_cities = [c.strip() for c in configured_cities.split(",")]
+        selected_cities = cities if cities is not None else configured_cities
+        if selected_cities is None:
+            if dry_run:
+                raise ValueError("Dry-run daemon requires explicit --cities or daemon.cities in config")
+            selected_cities = DEFAULT_CITIES
+            log.warning("daemon_default_cities_used", cities=selected_cities)
+        self.cities = [resolve_city_alias(c.strip()) for c in selected_cities if c.strip()]
+        self.city_set = set(self.cities)
+
         self.trader = ClobTrader(config)
         self.paper: PaperTradeDB | None = None
+        self.fill_model = FillModel()
 
         if dry_run:
-            self.paper = PaperTradeDB(initial_bankroll=float(
-                os.environ.get("PM_BOT_BANKROLL", sizing.get("bankroll", 100.0))
-            ))
+            paper_db_path = os.environ.get("PM_BOT_PAPER_DB", daemon_cfg.get("paper_db_path"))
+            self.paper = PaperTradeDB(
+                Path(paper_db_path).expanduser() if paper_db_path else None,
+                initial_bankroll=float(os.environ.get("PM_BOT_BANKROLL", sizing.get("bankroll", 100.0))),
+            )
             self.bankroll = self.paper.bankroll
         else:
             self.bankroll = float(os.environ.get("PM_BOT_BANKROLL", sizing.get("bankroll", 500.0)))
 
         self.kelly_fraction_val = float(os.environ.get("PM_BOT_KELLY", sizing.get("kelly_fraction", 0.25)))
-        self.max_single = float(os.environ.get("PM_BOT_MAX_SINGLE", sizing.get("max_single", 50.0)))
-        self.max_daily = float(os.environ.get("PM_BOT_MAX_DAILY", sizing.get("max_daily", 200.0)))
-        self.max_per_city = float(os.environ.get("PM_BOT_MAX_PER_CITY", sizing.get("max_per_city", 100.0)))
+        self.stop_loss = float(os.environ.get("PM_BOT_STOP_LOSS", sizing.get("stop_loss", 0.0)) or 0.0)
+        if self.stop_loss > 0 and not dry_run:
+            raise ValueError("Live daemon stop-loss is not implemented. Use --dry-run or omit --stop-loss for live mode.")
+        self.base_max_single = float(os.environ.get("PM_BOT_MAX_SINGLE", sizing.get("max_single", 50.0)))
+        self.base_max_daily = float(os.environ.get("PM_BOT_MAX_DAILY", sizing.get("max_daily", 200.0)))
+        self.base_max_per_city = float(os.environ.get("PM_BOT_MAX_PER_CITY", sizing.get("max_per_city", 100.0)))
         self.max_total_pct = float(os.environ.get("PM_BOT_MAX_TOTAL_PCT", sizing.get("max_total_pct", 0.30)))
-        self.max_single = min(self.max_single, self.bankroll * 0.15)
-        self.max_daily = min(self.max_daily, self.bankroll * 0.50)
-        self.max_per_city = min(self.max_per_city, self.bankroll * 0.25)
+        self.max_single = min(self.base_max_single, self.bankroll * 0.15)
+        self.max_daily = min(self.base_max_daily, self.bankroll * 0.50)
+        self.max_per_city = min(self.base_max_per_city, self.bankroll * 0.25)
         self.scan_interval = int(daemon_cfg.get("scan_interval", 300))
         self.heartbeat_path = Path(
             os.environ.get("PM_BOT_HEARTBEAT", daemon_cfg.get("heartbeat_path", str(HEARTBEAT_FILE)))
@@ -155,11 +181,15 @@ class TradingDaemon:
         self.trades_this_cycle = 0
         async with httpx.AsyncClient(timeout=30.0) as client:
             events = await fetch_weather_events(client)
-            events = [e for e in events if e.city in {resolve_city_alias(c) for c in DEFAULT_CITIES}]
+            events = [e for e in events if e.city in self.city_set]
 
             if not events:
                 log.debug("no_events_found")
                 return
+
+            self._sync_dynamic_risk_limits()
+            await self._apply_paper_stop_loss(events)
+            self._sync_dynamic_risk_limits()
 
             forecasts: dict[str, ForecastResult] = {}
             consensus_forecasts: dict[str, Any] = {}
@@ -281,6 +311,56 @@ class TradingDaemon:
 
             await self._auto_settle()
 
+    def _sync_dynamic_risk_limits(self) -> None:
+        if self.dry_run and self.paper is not None:
+            self.bankroll = self.paper.bankroll
+        self.max_single = min(self.base_max_single, self.bankroll * 0.15)
+        self.max_daily = min(self.base_max_daily, self.bankroll * 0.50)
+        self.max_per_city = min(self.base_max_per_city, self.bankroll * 0.25)
+        self.risk_manager.bankroll = self.bankroll
+        self.risk_manager.max_daily = self.max_daily
+        self.risk_manager.max_per_city = self.max_per_city
+
+    async def _apply_paper_stop_loss(self, events: list[Any]) -> None:
+        if not self.dry_run or self.paper is None or self.stop_loss <= 0:
+            return
+        open_trades = self.paper.get_open_trades()
+        if not open_trades:
+            return
+
+        price_by_market: dict[str, tuple[float, float]] = {}
+        for ev in events:
+            for bucket in ev.buckets:
+                price_by_market[bucket.market_id] = (bucket.yes_price, bucket.no_price)
+
+        for trade in open_trades:
+            market_id = str(trade.get("market_id", ""))
+            prices = price_by_market.get(market_id)
+            if not prices:
+                continue
+            yes_price, no_price = prices
+            side = str(trade.get("side", "YES"))
+            entry = float(trade.get("price", 0.0))
+            current_price = yes_price if side == "YES" else no_price
+            if entry <= 0:
+                continue
+            drawdown = (entry - current_price) / entry
+            if drawdown >= self.stop_loss:
+                self.paper.close_trade_at_price(
+                    order_id=str(trade.get("order_id", "")),
+                    exit_price=current_price,
+                    reason=f"stop_loss_{self.stop_loss:.0%}",
+                )
+                self.bankroll = self.paper.bankroll
+                log.info(
+                    "paper_stop_loss_triggered",
+                    market_id=market_id,
+                    side=side,
+                    entry=entry,
+                    current=current_price,
+                    drawdown=drawdown,
+                )
+
     async def _auto_settle(self) -> None:
         if self.dry_run:
             await self._paper_settle()
@@ -364,9 +444,43 @@ class TradingDaemon:
         size_shares = size_usd / price if price > 0 else 1
 
         if self.dry_run and self.paper is not None:
+            fill_probability = self.fill_model.fill_probability(price)
+            fill_key = f"{rec.event.event_id}:{bucket.market_id}:{rec.direction}:{self.cycle_count}"
+            order_seq = self.trades_this_cycle
+            self.trades_this_cycle += 1
+            order_prefix = f"DRY-{self.cycle_count}-{int(time.time() * 1000)}-{order_seq}-{uuid.uuid4().hex[:8]}"
+            if not self._deterministic_fill(fill_key, fill_probability):
+                recorded = self.paper.record_trade(
+                    order_id=f"{order_prefix}-UNFILLED",
+                    market_id=bucket.market_id,
+                    side=rec.direction,
+                    price=price,
+                    size_usd=size_usd,
+                    shares=0.0,
+                    strategy=rec.strategy,
+                    edge=rec.edge,
+                    city=rec.city,
+                    temp_label=rec.temp_label,
+                    kelly_fraction_val=rec.kelly_fraction,
+                    reasoning=rec.reasoning,
+                    fill_probability=fill_probability,
+                    status="unfilled",
+                    fill_reason="deterministic_fill_model",
+                )
+                if not recorded:
+                    log.warning("paper_trade_record_duplicate", order_id=f"{order_prefix}-UNFILLED")
+                log.info(
+                    "paper_trade_not_filled",
+                    strategy=rec.strategy,
+                    city=rec.city,
+                    direction=rec.direction,
+                    price=price,
+                    fill_probability=fill_probability,
+                )
+                return
             shares = size_usd / price if price > 0 else 1
-            self.paper.record_trade(
-                order_id=f"DRY-{self.cycle_count}-{self.trades_this_cycle}",
+            recorded = self.paper.record_trade(
+                order_id=order_prefix,
                 market_id=bucket.market_id,
                 side=rec.direction,
                 price=price,
@@ -378,8 +492,11 @@ class TradingDaemon:
                 temp_label=rec.temp_label,
                 kelly_fraction_val=rec.kelly_fraction,
                 reasoning=rec.reasoning,
+                fill_probability=fill_probability,
             )
-            self.trades_this_cycle += 1
+            if not recorded:
+                log.warning("paper_trade_record_duplicate", order_id=order_prefix)
+                return
             log.info(
                 "dry_run_trade",
                 strategy=rec.strategy,
@@ -389,6 +506,7 @@ class TradingDaemon:
                 price=price,
                 size_usd=size_usd,
                 edge=rec.edge,
+                fill_probability=fill_probability,
                 bankroll=self.paper.bankroll if self.paper else self.bankroll,
             )
             return
@@ -448,6 +566,15 @@ class TradingDaemon:
             )
         else:
             log.warning("auto_trade_failed", city=rec.city, direction=rec.direction)
+
+    @staticmethod
+    def _deterministic_fill(key: str, probability: float) -> bool:
+        import hashlib
+
+        bounded = max(0.0, min(1.0, probability))
+        digest = hashlib.blake2b(key.encode("utf-8"), digest_size=8).digest()
+        value = int.from_bytes(digest, "big") / float(2**64 - 1)
+        return value <= bounded
 
     def _recover_state(self) -> None:
         # PRD 3D: Check for crash recovery from previous run
@@ -725,7 +852,12 @@ def _estimate_hours_to_resolution(date_str: str) -> float | None:
         return None
 
 
-async def daemon_start(debug: bool = False, dry_run: bool = False, strategy_names: list[str] | None = None) -> None:
+async def daemon_start(
+    debug: bool = False,
+    dry_run: bool = False,
+    strategy_names: list[str] | None = None,
+    cities: list[str] | None = None,
+) -> None:
     _setup_logging(debug)
 
     if _is_daemon_running():
@@ -734,7 +866,7 @@ async def daemon_start(debug: bool = False, dry_run: bool = False, strategy_name
         return
 
     config = load_config()
-    daemon = TradingDaemon(config, dry_run=dry_run, strategy_names=strategy_names)
+    daemon = TradingDaemon(config, dry_run=dry_run, strategy_names=strategy_names, cities=cities)
 
     if not daemon.trader.is_configured() and not dry_run:
         console.print("[red]Trading credentials not configured. Set POLY_PK and [clob] in config.toml[/red]")
@@ -744,6 +876,7 @@ async def daemon_start(debug: bool = False, dry_run: bool = False, strategy_name
         console.print("[bold yellow]Starting PM-Bot daemon in DRY-RUN mode (no orders will be placed)[/bold yellow]")
         if strategy_names:
             console.print(f"[dim]Strategies: {', '.join(strategy_names)}[/dim]")
+        console.print(f"[dim]Cities: {', '.join(daemon.cities)}[/dim]")
     else:
         console.print("[bold green]Starting PM-Bot daemon...[/bold green]")
     await daemon.run()

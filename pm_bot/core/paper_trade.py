@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime, timezone
+from math import floor
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +61,16 @@ CREATE TABLE IF NOT EXISTS paper_daily (
 );
 """
 
+SCHEMA_V2 = """
+ALTER TABLE paper_trades ADD COLUMN exit_price REAL;
+ALTER TABLE paper_trades ADD COLUMN exit_reason TEXT;
+ALTER TABLE paper_trades ADD COLUMN fill_probability REAL;
+"""
+
+SCHEMA_V3 = """
+ALTER TABLE paper_trades ADD COLUMN fill_reason TEXT;
+"""
+
 
 class PaperTradeDB:
     def __init__(self, db_path: Path | None = None, initial_bankroll: float = 100.0) -> None:
@@ -91,6 +102,35 @@ class PaperTradeDB:
             self._conn.execute("INSERT INTO schema_version (version) VALUES (1)")
             self._conn.commit()
             log.info("paper_db_migration_applied", version=1)
+            current = 1
+
+        if current < 2:
+            for statement in SCHEMA_V2.strip().split(";"):
+                stmt = statement.strip()
+                if not stmt:
+                    continue
+                try:
+                    self._conn.execute(stmt)
+                except sqlite3.OperationalError as e:
+                    if "duplicate column name" not in str(e).lower():
+                        raise
+            self._conn.execute("INSERT INTO schema_version (version) VALUES (2)")
+            self._conn.commit()
+            log.info("paper_db_migration_applied", version=2)
+
+        if current < 3:
+            for statement in SCHEMA_V3.strip().split(";"):
+                stmt = statement.strip()
+                if not stmt:
+                    continue
+                try:
+                    self._conn.execute(stmt)
+                except sqlite3.OperationalError as e:
+                    if "duplicate column name" not in str(e).lower():
+                        raise
+            self._conn.execute("INSERT INTO schema_version (version) VALUES (3)")
+            self._conn.commit()
+            log.info("paper_db_migration_applied", version=3)
 
     def _init_bankroll(self) -> None:
         assert self._conn is not None
@@ -171,14 +211,17 @@ class PaperTradeDB:
         temp_label: str = "",
         kelly_fraction_val: float = 0.0,
         reasoning: str = "",
+        fill_probability: float | None = None,
+        status: str = "open",
+        fill_reason: str | None = None,
     ) -> bool:
         conn = self._get_conn()
         try:
-            conn.execute(
-                """INSERT OR IGNORE INTO paper_trades
+            cursor = conn.execute(
+                """INSERT INTO paper_trades
                    (order_id, market_id, strategy, side, price, size_usd, shares,
-                    kelly_fraction, edge, city, temp_label, reasoning)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    kelly_fraction, edge, city, temp_label, reasoning, fill_probability, status, fill_reason)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     order_id,
                     market_id,
@@ -192,10 +235,14 @@ class PaperTradeDB:
                     city,
                     temp_label,
                     reasoning,
+                    fill_probability,
+                    status,
+                    fill_reason,
                 ),
             )
             conn.commit()
-            self.daily_spent = self.daily_spent + size_usd
+            if cursor.rowcount == 1 and status in {"open", "filled"}:
+                self.daily_spent = self.daily_spent + size_usd
             return True
         except sqlite3.IntegrityError:
             log.warning("paper_duplicate_order", order_id=order_id)
@@ -209,6 +256,36 @@ class PaperTradeDB:
             (market_id, side),
         ).fetchone()
         return bool(row and row[0] > 0)
+
+    def close_trade_at_price(
+        self,
+        order_id: str,
+        exit_price: float,
+        reason: str,
+    ) -> float:
+        conn = self._get_conn()
+        row = conn.execute(
+            """SELECT id, side, price, size_usd, shares FROM paper_trades
+               WHERE order_id = ? AND status = 'open'""",
+            (order_id,),
+        ).fetchone()
+        if not row:
+            return 0.0
+
+        size_usd = float(row["size_usd"])
+        shares = float(row["shares"])
+        pnl = shares * exit_price - size_usd
+
+        conn.execute(
+            """UPDATE paper_trades
+               SET status = 'closed', settled_pnl = ?, settled_at = ?, exit_price = ?, exit_reason = ?
+               WHERE id = ?""",
+            (pnl, _utc_now(), exit_price, reason, row["id"]),
+        )
+        conn.commit()
+        self.bankroll = self.bankroll + pnl
+        log.info("paper_trade_closed", order_id=order_id, reason=reason, exit_price=exit_price, pnl=pnl)
+        return pnl
 
     def settle_market(self, market_id: str, winning_side: str) -> float:
         conn = self._get_conn()
@@ -236,10 +313,9 @@ class PaperTradeDB:
             else:
                 if winning_side == "NO":
                     payout = shares * 1.0
-                    cost = size_usd * (1.0 - price)
-                    pnl = payout - cost
+                    pnl = payout - size_usd
                 else:
-                    pnl = -(shares * price)
+                    pnl = -size_usd
 
             total_pnl += pnl
 
@@ -270,13 +346,30 @@ class PaperTradeDB:
     def settle_by_temperature(self, market_id: str, observed_temp_c: float, temp_unit: str = "C") -> float:
         conn = self._get_conn()
         row = conn.execute(
-            "SELECT side FROM paper_trades WHERE market_id = ? AND status = 'open' LIMIT 1",
+            """SELECT temp_label FROM paper_trades
+               WHERE market_id = ? AND status = 'open' AND temp_label != '' LIMIT 1""",
             (market_id,),
         ).fetchone()
         if not row:
             return 0.0
 
-        return self.settle_market(market_id, winning_side="YES")
+        from pm_bot.core.parser import parse_bucket
+
+        bucket = parse_bucket(str(row["temp_label"]), market_id=market_id)
+        if bucket is None:
+            return 0.0
+
+        if bucket.is_low_tail:
+            hit = floor(observed_temp_c) <= floor(bucket.temp_high_c)
+        elif bucket.is_high_tail:
+            hit = floor(observed_temp_c) >= floor(bucket.temp_low_c)
+        elif bucket.temp_unit == "F" or temp_unit.upper() == "F":
+            obs_f = floor(observed_temp_c * 1.8 + 32.0)
+            hit = floor(bucket.temp_low) <= obs_f <= floor(bucket.temp_high)
+        else:
+            hit = floor(observed_temp_c) == floor(bucket.temp_low_c)
+
+        return self.settle_market(market_id, winning_side="YES" if hit else "NO")
 
     def get_open_trades(self) -> list[dict[str, Any]]:
         conn = self._get_conn()
@@ -294,14 +387,16 @@ class PaperTradeDB:
 
     def get_settled_pnl(self) -> float:
         conn = self._get_conn()
-        row = conn.execute("SELECT COALESCE(SUM(settled_pnl), 0) FROM paper_trades WHERE status = 'settled'").fetchone()
+        row = conn.execute(
+            "SELECT COALESCE(SUM(settled_pnl), 0) FROM paper_trades WHERE status IN ('settled', 'closed')"
+        ).fetchone()
         return float(row[0]) if row else 0.0
 
     def get_trade_stats(self) -> dict[str, Any]:
         conn = self._get_conn()
-        total = conn.execute("SELECT COUNT(*) FROM paper_trades WHERE status = 'settled'").fetchone()[0]
-        wins = conn.execute("SELECT COUNT(*) FROM paper_trades WHERE status = 'settled' AND settled_pnl > 0").fetchone()[0]
-        total_pnl = conn.execute("SELECT COALESCE(SUM(settled_pnl), 0) FROM paper_trades WHERE status = 'settled'").fetchone()[0]
+        total = conn.execute("SELECT COUNT(*) FROM paper_trades WHERE status IN ('settled', 'closed')").fetchone()[0]
+        wins = conn.execute("SELECT COUNT(*) FROM paper_trades WHERE status IN ('settled', 'closed') AND settled_pnl > 0").fetchone()[0]
+        total_pnl = conn.execute("SELECT COALESCE(SUM(settled_pnl), 0) FROM paper_trades WHERE status IN ('settled', 'closed')").fetchone()[0]
         open_count = conn.execute("SELECT COUNT(*) FROM paper_trades WHERE status = 'open'").fetchone()[0]
 
         return {
@@ -323,7 +418,7 @@ class PaperTradeDB:
         today = _utc_today()
         row = conn.execute(
             """SELECT COALESCE(SUM(settled_pnl), 0) FROM paper_trades
-               WHERE date(settled_at) = ? AND status = 'settled'""",
+               WHERE date(settled_at) = ? AND status IN ('settled', 'closed')""",
             (today,),
         ).fetchone()
         return float(row[0]) if row else 0.0
@@ -332,7 +427,7 @@ class PaperTradeDB:
         conn = self._get_conn()
         rows = conn.execute(
             """SELECT settled_pnl FROM paper_trades
-               WHERE status = 'settled' AND settled_pnl IS NOT NULL
+               WHERE status IN ('settled', 'closed') AND settled_pnl IS NOT NULL
                ORDER BY settled_at DESC LIMIT 20"""
         ).fetchall()
         count = 0

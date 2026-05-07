@@ -20,7 +20,12 @@ backtest_app = typer.Typer(help="Backtesting framework", no_args_is_help=True)
 
 @backtest_app.command("run")
 def backtest_run(
-    strategy: Optional[str] = typer.Option(None, "--strategy", "-s", help="Strategy name (omit for --all)"),
+    strategy: Optional[str] = typer.Option(
+        None,
+        "--strategy",
+        "-s",
+        help="Strategy name or comma-separated names (omit for --all)",
+    ),
     all_strats: bool = typer.Option(False, "--all", help="Run all strategies"),
     compare: bool = typer.Option(False, "--compare", help="Show side-by-side comparison"),
     bankroll: float = typer.Option(100.0, "--bankroll", "-b", help="Starting bankroll in USD"),
@@ -99,11 +104,19 @@ async def _run_backtest(
     debug: bool,
 ) -> None:
     _setup_logging(debug)
+    if live and not real:
+        real = True
+        console.print("[yellow]--live implies --real; using real market data.[/yellow]")
 
     all_strategies = get_all_strategies()
 
-    if strategy and strategy in all_strategies:
-        strats = [all_strategies[strategy]]
+    if strategy:
+        names = [s.strip() for s in strategy.split(",") if s.strip()]
+        unknown = [name for name in names if name not in all_strategies]
+        if unknown:
+            console.print(f"[red]Unknown strategy: {', '.join(unknown)}. Available: {', '.join(all_strategies)}[/red]")
+            return
+        strats = [all_strategies[name] for name in names]
     elif all_strats or compare or strategy is None:
         strats = list(all_strategies.values())
     else:

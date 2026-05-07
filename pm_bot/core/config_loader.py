@@ -52,6 +52,7 @@ def get_sizing(config: dict) -> dict[str, float]:
         "max_per_city": float(os.environ.get("PM_BOT_MAX_PER_CITY", sizing.get("max_per_city", 100.0))),
         "max_total_pct": float(os.environ.get("PM_BOT_MAX_TOTAL_PCT", sizing.get("max_total_pct", 0.30))),
         "bankroll": float(os.environ.get("PM_BOT_BANKROLL", sizing.get("bankroll", 500.0))),
+        "stop_loss": float(os.environ.get("PM_BOT_STOP_LOSS", sizing.get("stop_loss", 0.0))),
     }
 
 
