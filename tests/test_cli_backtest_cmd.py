@@ -238,6 +238,28 @@ class TestRunBacktest:
             forecast_penalty=0.10, portfolio=False, seed=None, debug=False,
         )
 
+    @pytest.mark.asyncio
+    @patch("pm_bot.cli.backtest_cmd.BacktestEngine")
+    @patch("pm_bot.cli.backtest_cmd.get_all_strategies")
+    async def test_live_mode_implies_real_market_data(self, mock_strats, mock_engine_cls):
+        mock_strat = MagicMock()
+        mock_strat.name = "gopfan2"
+        mock_strats.return_value = {"gopfan2": mock_strat}
+        mock_engine = MagicMock()
+        mock_engine.run_real = AsyncMock(return_value=[])
+        mock_engine_cls.return_value = mock_engine
+
+        await _run_backtest(
+            strategy="gopfan2", all_strats=False, compare=False,
+            bankroll=100.0, days=90, cities_str="NYC", csv_path=None,
+            real=False, stop_loss=0.0, kelly=0.25, max_pos=0.10,
+            no_compound=False, live=True, compare_forecast=False,
+            forecast_penalty=0.05, portfolio=False, seed=None, debug=False,
+        )
+
+        mock_engine.run_real.assert_awaited_once()
+        mock_engine.run.assert_not_called()
+
 
 class TestFilterClobOnly:
     def test_filters_forecast_trades(self):

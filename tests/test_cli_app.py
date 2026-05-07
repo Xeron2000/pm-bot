@@ -327,6 +327,15 @@ class TestDaemonCommands:
         result = runner.invoke(app, ["daemon", "start"])
         assert result.exit_code == 0
 
+    @patch.dict("os.environ", {"PM_BOT_STOP_LOSS": "0.1"})
+    @patch("pm_bot.cli.daemon.daemon_start", new_callable=AsyncMock)
+    def test_daemon_start_stop_loss_overrides_env(self, mock_start):
+        mock_start.return_value = None
+        result = runner.invoke(app, ["daemon", "start", "--dry-run", "--stop-loss", "0.2"])
+        assert result.exit_code == 0
+        import os
+        assert os.environ["PM_BOT_STOP_LOSS"] == "0.2"
+
     @patch("pm_bot.cli.daemon.daemon_stop", new_callable=AsyncMock)
     def test_daemon_stop(self, mock_stop):
         mock_stop.return_value = None

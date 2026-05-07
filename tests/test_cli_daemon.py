@@ -17,6 +17,8 @@ from pm_bot.cli.daemon import (
     _setup_logging,
     _fetch_forecast_at,
 )
+from pm_bot.core.paper_trade import PaperTradeDB
+from pm_bot.models.market import TemperatureBucket, WeatherEvent
 
 
 class TestEstimateHoursToResolution:
@@ -108,6 +110,44 @@ class TestTradingDaemonInit:
         with patch.dict("os.environ", {"PM_BOT_BANKROLL": "2000"}):
             daemon = TradingDaemon({})
             assert daemon.bankroll == 2000.0
+
+    def test_explicit_city_config_uses_resolved_aliases(self):
+        daemon = TradingDaemon({}, cities=["NYC", "Tokyo", "Lagos"])
+        assert daemon.cities == ["New York", "Tokyo", "Lagos"]
+        assert daemon.city_set == {"New York", "Tokyo", "Lagos"}
+
+    def test_dry_run_requires_explicit_or_configured_cities(self):
+        with pytest.raises(ValueError, match="requires explicit --cities"):
+            TradingDaemon({}, dry_run=True)
+
+    def test_configured_city_set_uses_resolved_aliases(self):
+        daemon = TradingDaemon({"daemon": {"cities": ["NYC", "London"], "paper_db_path": ":memory:"}}, dry_run=True)
+        assert daemon.cities == ["New York", "London"]
+
+    def test_dynamic_risk_limits_recompute_from_base_caps(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("PM_BOT_PAPER_DB", str(tmp_path / "paper.db"))
+        daemon = TradingDaemon(
+            {"daemon": {"cities": ["NYC"]}, "sizing": {"bankroll": 100.0, "max_single": 50.0}},
+            dry_run=True,
+        )
+        assert daemon.max_single == 15.0
+        assert daemon.paper is not None
+        daemon.paper.bankroll = 50.0
+        daemon._sync_dynamic_risk_limits()
+        assert daemon.max_single == 7.5
+        daemon.paper.bankroll = 200.0
+        daemon._sync_dynamic_risk_limits()
+        assert daemon.max_single == 30.0
+
+    def test_stop_loss_env_override(self):
+        with patch.dict("os.environ", {"PM_BOT_STOP_LOSS": "0.2"}):
+            daemon = TradingDaemon({"daemon": {"paper_db_path": ":memory:"}}, dry_run=True, cities=["NYC"])
+            assert daemon.stop_loss == 0.2
+
+    def test_live_stop_loss_fails_fast(self):
+        with patch.dict("os.environ", {"PM_BOT_STOP_LOSS": "0.2"}):
+            with pytest.raises(ValueError, match="Live daemon stop-loss"):
+                TradingDaemon({}, dry_run=False)
 
 
 class TestTradingDaemonWriteHeartbeat:
@@ -307,6 +347,220 @@ class TestTradingDaemonExecuteTrade:
         daemon.db.record_trade.return_value = True
         with patch("pm_bot.cli.daemon.notify", new_callable=AsyncMock):
             await daemon._execute_trade(rec)
+
+    @pytest.mark.asyncio
+    async def test_dry_run_trade_not_filled_records_unfilled_lifecycle(self, tmp_path):
+        from pm_bot.models.market import Recommendation, WeatherEvent, TemperatureBucket
+
+        ev = WeatherEvent(event_id="ev-fill", title="Test", slug="test", city="NYC",
+                          date="2026-01-15", measure_type="high", buckets=[])
+        bucket = TemperatureBucket(market_id="m-fill", question="23C", temp_low=23.0,
+                                   temp_high=23.0, temp_unit="C", yes_price=0.02,
+                                   no_price=0.98, volume=500.0)
+        rec = Recommendation(strategy="test", event=ev, bucket=bucket,
+                             direction="YES", edge=0.10, reasoning="test",
+                             size_usd=10.0, kelly_fraction=0.1)
+        daemon = TradingDaemon({"daemon": {"paper_db_path": ":memory:"}}, dry_run=True, cities=["NYC"])
+        daemon.paper = PaperTradeDB(tmp_path / "paper.db", initial_bankroll=100.0)
+        daemon.fill_model.fill_probability = MagicMock(return_value=0.0)
+
+        await daemon._execute_trade(rec)
+
+        assert daemon.paper.get_open_trades() == []
+        trades = daemon.paper.get_recent_trades()
+        assert len(trades) == 1
+        assert trades[0]["status"] == "unfilled"
+        assert trades[0]["fill_probability"] == 0.0
+        assert trades[0]["fill_reason"] == "deterministic_fill_model"
+        assert daemon.paper.daily_spent == 0.0
+
+    @pytest.mark.asyncio
+    async def test_multiple_unfilled_trades_have_unique_order_ids(self, tmp_path):
+        from pm_bot.models.market import Recommendation, TemperatureBucket, WeatherEvent
+
+        ev = WeatherEvent(event_id="ev-unfilled", title="Test", slug="test", city="NYC", date="2026-01-15")
+        daemon = TradingDaemon({"daemon": {"paper_db_path": ":memory:"}}, dry_run=True, cities=["NYC"])
+        daemon.paper = PaperTradeDB(tmp_path / "paper.db", initial_bankroll=100.0)
+        daemon.fill_model.fill_probability = MagicMock(return_value=0.0)
+
+        for idx in range(2):
+            bucket = TemperatureBucket(
+                market_id=f"m-unfilled-{idx}",
+                question="23C",
+                temp_low=23.0,
+                temp_high=23.0,
+                temp_unit="C",
+                yes_price=0.02,
+                no_price=0.98,
+                volume=500.0,
+            )
+            await daemon._execute_trade(
+                Recommendation(
+                    strategy="test",
+                    event=ev,
+                    bucket=bucket,
+                    direction="YES",
+                    edge=0.10,
+                    reasoning="test",
+                    size_usd=10.0,
+                    kelly_fraction=0.1,
+                )
+            )
+
+        trades = daemon.paper.get_recent_trades()
+        assert len(trades) == 2
+        assert len({trade["order_id"] for trade in trades}) == 2
+        assert all(trade["status"] == "unfilled" for trade in trades)
+
+    @pytest.mark.asyncio
+    async def test_dry_run_order_ids_survive_cycle_reset(self, tmp_path):
+        from pm_bot.models.market import Recommendation, TemperatureBucket, WeatherEvent
+
+        ev = WeatherEvent(event_id="ev-restart", title="Test", slug="test", city="NYC", date="2026-01-15")
+        bucket = TemperatureBucket(
+            market_id="m-restart",
+            question="23C",
+            temp_low=23.0,
+            temp_high=23.0,
+            temp_unit="C",
+            yes_price=0.50,
+            no_price=0.50,
+            volume=500.0,
+        )
+        rec = Recommendation(
+            strategy="test",
+            event=ev,
+            bucket=bucket,
+            direction="YES",
+            edge=0.10,
+            reasoning="test",
+            size_usd=10.0,
+            kelly_fraction=0.1,
+        )
+        daemon = TradingDaemon({"daemon": {"paper_db_path": ":memory:"}}, dry_run=True, cities=["NYC"])
+        daemon.paper = PaperTradeDB(tmp_path / "paper.db", initial_bankroll=100.0)
+        daemon.fill_model.fill_probability = MagicMock(return_value=1.0)
+
+        await daemon._execute_trade(rec)
+        daemon.cycle_count = 0
+        daemon.trades_this_cycle = 0
+        await daemon._execute_trade(rec)
+
+        trades = daemon.paper.get_recent_trades()
+        assert len(trades) == 2
+        assert len({trade["order_id"] for trade in trades}) == 2
+
+    @pytest.mark.asyncio
+    async def test_dry_run_trade_filled_records_fill_probability(self, tmp_path):
+        from pm_bot.models.market import Recommendation, WeatherEvent, TemperatureBucket
+
+        ev = WeatherEvent(event_id="ev-fill", title="Test", slug="test", city="NYC",
+                          date="2026-01-15", measure_type="high", buckets=[])
+        bucket = TemperatureBucket(market_id="m-fill", question="23C", temp_low=23.0,
+                                   temp_high=23.0, temp_unit="C", yes_price=0.50,
+                                   no_price=0.50, volume=500.0)
+        rec = Recommendation(strategy="test", event=ev, bucket=bucket,
+                             direction="YES", edge=0.10, reasoning="test",
+                             size_usd=10.0, kelly_fraction=0.1)
+        daemon = TradingDaemon({"daemon": {"paper_db_path": ":memory:"}}, dry_run=True, cities=["NYC"])
+        daemon.paper = PaperTradeDB(tmp_path / "paper.db", initial_bankroll=100.0)
+        daemon.fill_model.fill_probability = MagicMock(return_value=1.0)
+
+        await daemon._execute_trade(rec)
+
+        trades = daemon.paper.get_open_trades()
+        assert len(trades) == 1
+        assert trades[0]["fill_probability"] == 1.0
+
+
+class TestTradingDaemonPaperStopLoss:
+    @pytest.mark.asyncio
+    async def test_applies_stop_loss_to_yes_position(self, tmp_path):
+        daemon = TradingDaemon(
+            {"daemon": {"paper_db_path": ":memory:"}, "sizing": {"stop_loss": 0.2}}, dry_run=True, cities=["NYC"]
+        )
+        daemon.paper = PaperTradeDB(tmp_path / "paper.db", initial_bankroll=100.0)
+        daemon.paper.record_trade(
+            order_id="ord-sl",
+            market_id="m-sl",
+            side="YES",
+            price=0.50,
+            size_usd=10.0,
+            shares=20.0,
+            strategy="gopfan2",
+            edge=0.1,
+        )
+        event = WeatherEvent(
+            event_id="ev-sl",
+            title="Test",
+            slug="test",
+            city="New York",
+            date="2026-01-15",
+            buckets=[TemperatureBucket(
+                market_id="m-sl",
+                question="23C",
+                temp_low=23.0,
+                temp_high=24.0,
+                temp_unit="C",
+                yes_price=0.35,
+                no_price=0.65,
+                volume=100.0,
+            )],
+        )
+
+        await daemon._apply_paper_stop_loss([event])
+
+        assert daemon.paper.get_open_trades() == []
+        assert daemon.paper.bankroll == 97.0
+
+    @pytest.mark.asyncio
+    async def test_stop_loss_resyncs_dynamic_risk_limits_before_new_sizing(self, tmp_path):
+        daemon = TradingDaemon(
+            {
+                "daemon": {"paper_db_path": ":memory:"},
+                "sizing": {"bankroll": 100.0, "max_single": 50.0, "stop_loss": 0.2},
+            },
+            dry_run=True,
+            cities=["NYC"],
+        )
+        daemon.paper = PaperTradeDB(tmp_path / "paper.db", initial_bankroll=100.0)
+        daemon.paper.record_trade(
+            order_id="ord-sl-sync",
+            market_id="m-sl-sync",
+            side="YES",
+            price=0.50,
+            size_usd=10.0,
+            shares=20.0,
+            strategy="gopfan2",
+            edge=0.1,
+        )
+        event = WeatherEvent(
+            event_id="ev-sl-sync",
+            title="Test",
+            slug="test",
+            city="NYC",
+            date="2026-01-15",
+            buckets=[
+                TemperatureBucket(
+                    market_id="m-sl-sync",
+                    question="23C",
+                    temp_low=23.0,
+                    temp_high=23.0,
+                    temp_unit="C",
+                    yes_price=0.30,
+                    no_price=0.70,
+                    volume=100.0,
+                )
+            ],
+        )
+
+        daemon._sync_dynamic_risk_limits()
+        assert daemon.max_single == 15.0
+        await daemon._apply_paper_stop_loss([event])
+        daemon._sync_dynamic_risk_limits()
+
+        assert daemon.paper.bankroll == 96.0
+        assert daemon.max_single == pytest.approx(14.4)
 
 
 class TestTradingDaemonRecoverState:
