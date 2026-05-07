@@ -56,9 +56,16 @@ class TestStrategyRegistry:
 
     def test_no_deleted_strategies(self):
         deleted = [
-            "narrow_no", "sum_arb", "metar_obs", "metar_lock", "mean_reversion",
-            "neg_risk_field_fade", "neg_risk_sum", "truncation_edge",
-            "ensemble_spread", "resolution_div",
+            "narrow_no",
+            "sum_arb",
+            "metar_obs",
+            "metar_lock",
+            "mean_reversion",
+            "neg_risk_field_fade",
+            "neg_risk_sum",
+            "truncation_edge",
+            "ensemble_spread",
+            "resolution_div",
         ]
         for name in deleted:
             assert name not in ALL_STRATEGIES

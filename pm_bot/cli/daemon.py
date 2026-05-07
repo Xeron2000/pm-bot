@@ -93,7 +93,9 @@ class TradingDaemon:
         self.kelly_fraction_val = float(os.environ.get("PM_BOT_KELLY", sizing.get("kelly_fraction", 0.25)))
         self.stop_loss = float(os.environ.get("PM_BOT_STOP_LOSS", sizing.get("stop_loss", 0.0)) or 0.0)
         if self.stop_loss > 0 and not dry_run:
-            raise ValueError("Live daemon stop-loss is not implemented. Use --dry-run or omit --stop-loss for live mode.")
+            raise ValueError(
+                "Live daemon stop-loss is not implemented. Use --dry-run or omit --stop-loss for live mode."
+            )
         self.base_max_single = float(os.environ.get("PM_BOT_MAX_SINGLE", sizing.get("max_single", 50.0)))
         self.base_max_daily = float(os.environ.get("PM_BOT_MAX_DAILY", sizing.get("max_daily", 200.0)))
         self.base_max_per_city = float(os.environ.get("PM_BOT_MAX_PER_CITY", sizing.get("max_per_city", 100.0)))
@@ -107,6 +109,7 @@ class TradingDaemon:
         ).expanduser()
 
         from pm_bot.core.risk import RiskDB
+
         risk_db: RiskDB
         if dry_run and self.paper is not None:
             risk_db = self.paper
@@ -699,7 +702,9 @@ class TradingDaemon:
                         "status": "running",
                         "cycle": self.cycle_count,
                         "trades_this_cycle": self.trades_this_cycle,
-                        "daily_spent": self.paper.daily_spent if self.dry_run and self.paper else self.db.get_daily_spent(),
+                        "daily_spent": self.paper.daily_spent
+                        if self.dry_run and self.paper
+                        else self.db.get_daily_spent(),
                         "bankroll": self.bankroll,
                         "pid": os.getpid(),
                         "uptime": time.time() - self.start_time,
