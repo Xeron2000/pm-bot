@@ -22,6 +22,23 @@ CITY_COORDS: dict[str, tuple[float, float]] = {
     "Austin": (30.1945, -97.6699),
     "Helsinki": (60.3172, 24.9635),
     "Denver": (39.8617, -104.6732),
+    # --- New high-volume Polymarket cities ---
+    "Beijing": (40.0799, 116.6031),
+    "Madrid": (40.4722, -3.5611),
+    "Wellington": (-41.3295, 174.8062),
+    "Milan": (45.6296, 8.7264),
+    "Wuhan": (30.7838, 114.2081),
+    "Munich": (48.3537, 11.7860),
+    "Moscow": (55.9731, 37.4146),
+    "San Francisco": (37.6213, -122.3790),
+    "Istanbul": (40.9769, 28.8140),
+    "Jakarta": (-6.1274, 106.6537),
+    "Mexico City": (19.4361, -99.0719),
+    "Amsterdam": (52.3082, 4.7642),
+    "Busan": (35.1797, 129.0750),
+    "Seattle": (47.4435, -122.3017),
+    "Toronto": (43.6778, -79.6248),
+    "Cape Town": (-33.9716, 18.6021),
 }
 
 CITY_ALIASES: dict[str, str] = {
@@ -32,6 +49,9 @@ CITY_ALIASES: dict[str, str] = {
     "SAO": "São Paulo",
     "BSAS": "Buenos Aires",
     "BA": "Buenos Aires",
+    "SF": "San Francisco",
+    "CDMX": "Mexico City",
+    "MEX": "Mexico City",
 }
 
 
@@ -39,7 +59,42 @@ def resolve_city_alias(name: str) -> str:
     return CITY_ALIASES.get(name, name)
 
 
-DEFAULT_CITIES = ["NYC", "London", "Hong Kong", "Miami", "Dallas", "Atlanta", "Seoul", "Tokyo"]
+DEFAULT_CITIES = [
+    "NYC",
+    "London",
+    "Tokyo",
+    "Chicago",
+    "Miami",
+    "Seoul",
+    "Warsaw",
+    "Lagos",
+    "Hong Kong",
+    "Shanghai",
+    "Beijing",
+    "Madrid",
+    "Taipei",
+    "Paris",
+    "Denver",
+    "Miami",
+    "Wellington",
+    "Milan",
+    "Wuhan",
+    "Munich",
+    "Moscow",
+    "San Francisco",
+    "Istanbul",
+    "Jakarta",
+    "Mexico City",
+    "Amsterdam",
+    "Busan",
+    "Seattle",
+    "Toronto",
+    "Cape Town",
+    "Atlanta",
+    "Dallas",
+    "Austin",
+    "Helsinki",
+]
 
 STRATEGY_DEFAULTS: dict[str, dict[str, float]] = {
     "gopfan2": {"yes_max": 0.15, "no_min": 0.45},
