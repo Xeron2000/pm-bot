@@ -69,6 +69,7 @@ class BacktestEngine:
         fill_model: FillModel | None = None,
         preloaded_fetcher: RealDataFetcher | None = None,
         preloaded_events: list | None = None,
+        spread_pct: float = 0.0,
     ) -> None:
         self.strategies = strategies
         self.bankroll = bankroll
@@ -82,6 +83,7 @@ class BacktestEngine:
         self.compound = compound
         self.live_mode = live_mode
         self.seed = seed
+        self.spread_pct = spread_pct
         self._preloaded_fetcher = preloaded_fetcher
         self._preloaded_events = preloaded_events
         if fill_model is not None:
@@ -212,6 +214,7 @@ class BacktestEngine:
             all_events = self._preloaded_events
             if self.cities:
                 from pm_bot.models.config import resolve_city_alias
+
                 allowed = {resolve_city_alias(c) for c in self.cities}
                 all_events = [ev for ev in all_events if ev.city in allowed]
             return fetcher, all_events, None
@@ -219,6 +222,40 @@ class BacktestEngine:
         fetcher = RealDataFetcher()
         client = httpx.AsyncClient(timeout=30.0)
         return fetcher, None, client
+
+    def _apply_spread(self, price: float, direction: str = "YES") -> float:
+        """Apply realistic Polymarket orderbook spread.
+
+        Polymarket weather markets have a structural orderbook:
+        - YES bid = $0.010, YES ask = $0.990
+        - NO  bid = $0.010, NO  ask = $0.990
+        - Mid price is calculated as (bid + ask) / 2 = $0.500
+
+        For extreme prices (tail buckets), the orderbook is:
+        - YES mid $0.01-$0.15: buy YES at ask=$0.990 (useless), buy NO at bid=$0.010 (if you want to short)
+        - YES mid $0.85+: buy YES at bid=$0.010 (if you want to go long), buy NO at ask=$0.990 (useless)
+
+        In practice, only tail buckets (mid < $0.15 or mid > $0.85) have any edge.
+        For those, the effective fill price is $0.01 (bid side) — you place a limit order at $0.01
+        and wait for someone to market-sell into it.
+
+        Args:
+            price: Mid price from the orderbook
+            direction: "YES" or "NO"
+        Returns:
+            Effective entry price after spread
+        """
+        if self.spread_pct <= 0:
+            return price
+
+        # spread_pct acts as the orderbook ask price for non-tail buckets
+        # For tail buckets (where real edge lives), use $0.01 bid
+        if price <= 0.15 or price >= 0.85:
+            # Tail bucket: place limit order at $0.01, hope for fill
+            return 0.01
+        else:
+            # Mid bucket: buy at ask (spread_pct as ask price)
+            return min(self.spread_pct, 0.99)
 
     async def run_real(self) -> list[BacktestResult]:
         """Run backtest using real Polymarket resolved + active events + CLOB prices.
@@ -232,7 +269,7 @@ class BacktestEngine:
         fetcher, preloaded_events, client = await self._get_events_and_fetcher()
         results: list[BacktestResult] = []
 
-        async with (client or httpx.AsyncClient(timeout=30.0)) as client_inner:
+        async with client or httpx.AsyncClient(timeout=30.0) as client_inner:
             if preloaded_events is not None:
                 all_events = preloaded_events
             else:
@@ -247,6 +284,7 @@ class BacktestEngine:
 
                 if self.cities:
                     from pm_bot.models.config import resolve_city_alias
+
                     allowed = {resolve_city_alias(c) for c in self.cities}
                     all_events = [ev for ev in all_events if ev.city in allowed]
 
@@ -262,6 +300,7 @@ class BacktestEngine:
                     if len(sample_m.token_id) > 20:
                         await fetcher.enrich_events_with_clob_prices(client_inner, all_events)
                         from pm_bot.core.config_loader import load_config
+
                         config = load_config()
                         dune_key = config.get("dune", {}).get("api_key", "")
                         if dune_key:
@@ -316,13 +355,13 @@ class BacktestEngine:
                     recs = strat.run(event, **kwargs)
 
                     for rec in recs:
-                        effective_price = rec.price
+                        effective_price = self._apply_spread(rec.price)
                         side = self.costs.live_side if self.live_mode else "taker"
                         source = price_sources.get(rec.bucket.market_id, "clob")
 
                         size = kelly_size(
                             edge=rec.edge,
-                            yes_price=rec.bucket.yes_price,
+                            yes_price=effective_price,
                             bankroll=current_bankroll,
                             kelly_fraction_val=self.kelly_fraction_val,
                             max_single=current_bankroll * self.max_single_pct,
@@ -375,7 +414,7 @@ class BacktestEngine:
                         if rec.direction == "YES":
                             raw_pnl = size * (1.0 - effective_price) if hit else -size * effective_price
                         else:
-                            raw_pnl = size * effective_price if not hit else -size * (1.0 - effective_price)
+                            raw_pnl = size * (1.0 - effective_price) if not hit else -size * effective_price
 
                         pnl = raw_pnl - cost
 
@@ -448,7 +487,7 @@ class BacktestEngine:
         """
         fetcher, preloaded_events, client = await self._get_events_and_fetcher()
 
-        async with (client or httpx.AsyncClient(timeout=30.0)) as client_inner:
+        async with client or httpx.AsyncClient(timeout=30.0) as client_inner:
             if preloaded_events is not None:
                 all_events = preloaded_events
             else:
@@ -465,6 +504,7 @@ class BacktestEngine:
 
                 if self.cities:
                     from pm_bot.models.config import resolve_city_alias
+
                     allowed = {resolve_city_alias(c) for c in self.cities}
                     all_events = [ev for ev in all_events if ev.city in allowed]
 
@@ -522,7 +562,7 @@ class BacktestEngine:
                 for strat in self.strategies:
                     recs = strat.run(event, **kwargs)
                     for rec in recs:
-                        effective_price = rec.price
+                        effective_price = self._apply_spread(rec.price)
                         if self.live_mode and rec.edge < self.costs.live_min_edge:
                             continue
                         key = (rec.bucket.market_id, rec.direction)
@@ -537,10 +577,10 @@ class BacktestEngine:
                 pending: list[tuple[Recommendation, str, str]] = []
                 for key, rec in best_recs.items():
                     source = price_sources.get(rec.bucket.market_id, "clob")
-                    effective_price = rec.price
+                    effective_price = self._apply_spread(rec.price)
                     size = kelly_size(
                         edge=rec.edge,
-                        yes_price=rec.bucket.yes_price,
+                        yes_price=effective_price,
                         bankroll=current_bankroll,
                         kelly_fraction_val=self.kelly_fraction_val,
                         max_single=current_bankroll * self.max_single_pct,
@@ -561,11 +601,11 @@ class BacktestEngine:
 
                 # Execute merged signals
                 for rec, source, strat_name in pending:
-                    effective_price = rec.price
+                    effective_price = self._apply_spread(rec.price)
                     side = self.costs.live_side if self.live_mode else "taker"
                     size = kelly_size(
                         edge=rec.edge,
-                        yes_price=rec.bucket.yes_price,
+                        yes_price=effective_price,
                         bankroll=current_bankroll,
                         kelly_fraction_val=self.kelly_fraction_val,
                         max_single=current_bankroll * self.max_single_pct,
@@ -612,7 +652,7 @@ class BacktestEngine:
                     if rec.direction == "YES":
                         raw_pnl = size * (1.0 - effective_price) if hit else -size * effective_price
                     else:
-                        raw_pnl = size * effective_price if not hit else -size * (1.0 - effective_price)
+                        raw_pnl = size * (1.0 - effective_price) if not hit else -size * effective_price
 
                     pnl = raw_pnl - cost
 

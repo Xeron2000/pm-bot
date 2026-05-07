@@ -54,6 +54,11 @@ def backtest_run(
         False, "--portfolio", help="Portfolio mode: all strategies share one bankroll, merged signals"
     ),
     seed: Optional[int] = typer.Option(None, "--seed", help="Random seed for deterministic FillModel sampling"),
+    spread: float = typer.Option(
+        0.0,
+        "--spread",
+        help="Realistic spread: absolute price added to mid for buy orders (e.g. 0.49 for Polymarket weather)",
+    ),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ):
     """Run backtest against historical data."""
@@ -78,6 +83,7 @@ def backtest_run(
             forecast_penalty=forecast_penalty,
             portfolio=portfolio,
             seed=seed,
+            spread=spread,
             debug=debug,
         )
     )
@@ -101,6 +107,7 @@ async def _run_backtest(
     forecast_penalty: float,
     portfolio: bool,
     seed: int | None,
+    spread: float,
     debug: bool,
 ) -> None:
     _setup_logging(debug)
@@ -148,6 +155,7 @@ async def _run_backtest(
         compound=not no_compound,
         live_mode=live,
         seed=seed,
+        spread_pct=spread,
     )
 
     if portfolio and real:

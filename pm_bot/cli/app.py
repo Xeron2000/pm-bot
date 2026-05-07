@@ -172,11 +172,16 @@ def daemon_start_cmd(
         None, "--strategies", "-s", help="Comma-separated strategy names (default: all)"
     ),
     cities: Optional[str] = typer.Option(
-        None, "--cities", "-c", help="Comma-separated city names/aliases; required for dry-run unless daemon.cities is configured"
+        None,
+        "--cities",
+        "-c",
+        help="Comma-separated city names/aliases; required for dry-run unless daemon.cities is configured",
     ),
     kelly: Optional[float] = typer.Option(None, "--kelly", "-k", help="Kelly fraction override (e.g. 0.15)"),
     stop_loss: Optional[float] = typer.Option(None, "--stop-loss", help="Stop-loss fraction override (e.g. 0.2)"),
-    bankroll: Optional[float] = typer.Option(None, "--bankroll", "-b", help="Starting bankroll (default: 100 dry-run, 500 live)"),
+    bankroll: Optional[float] = typer.Option(
+        None, "--bankroll", "-b", help="Starting bankroll (default: 100 dry-run, 500 live)"
+    ),
 ):
     """Start the 24/7 automated trading daemon."""
     from pm_bot.cli.daemon import daemon_start
@@ -241,6 +246,11 @@ def backtest(
         False, "--portfolio", help="Portfolio mode: all strategies share one bankroll, merged signals"
     ),
     seed: Optional[int] = typer.Option(None, "--seed", help="Random seed for deterministic FillModel sampling"),
+    spread: float = typer.Option(
+        0.0,
+        "--spread",
+        help="Realistic spread: absolute price added to mid for buy orders (e.g. 0.49 for Polymarket weather)",
+    ),
     debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
 ):
     """Run backtest against historical data."""
@@ -265,6 +275,7 @@ def backtest(
             forecast_penalty=forecast_penalty,
             portfolio=portfolio,
             seed=seed,
+            spread=spread,
             debug=debug,
         )
     )
@@ -284,6 +295,7 @@ def paper_pnl(
 
     if reset:
         from pathlib import Path
+
         db_path = Path.home() / ".pm-bot" / "paper-trades.db"
         if db_path.exists():
             db_path.unlink()
