@@ -7,9 +7,9 @@
 ## Current Status
 
 <!-- @@@auto:current-status -->
-- **Active File**: `journal-1.md`
-- **Total Sessions**: 17
-- **Last Active**: 2026-05-07
+- **Active File**: `journal-2.md`
+- **Total Sessions**: 18
+- **Last Active**: 2026-05-10
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,8 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~588 | Active |
+| `journal-2.md` | ~86 | Active |
+| `journal-1.md` | ~588 | Archived |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 18 | 2026-05-10 | 00 Aggressive Snowball - Monte Carlo + 5 Strategies | `4557bfc` | `main` |
 | 17 | 2026-05-07 | Fix P&L bug, add realistic spread, remove unviable strategies | `9e7f009`, `73c11a6`, `69ef7ce`, `97e0b57` | `main` |
 | 16 | 2026-05-07 | Expand weather city universe to 36 and comprehensive backtest | `fa89f46`, `cc4be95`, `67f98bf` | `main` |
 | 15 | 2026-05-06 | Deploy dry-run daemon to rn server, log cleanup | `1519030`, `9011d50`, `2055ae1`, `03f62bc` | `main` |
