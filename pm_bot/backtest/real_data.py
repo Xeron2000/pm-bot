@@ -458,6 +458,11 @@ def _is_high_temp_market(title: str) -> bool:
 
 
 class RealDataFetcher:
+    # Threshold for determining if a market resolved to YES based on outcomePrices.
+    # 0.90 is slightly more lenient than the theoretical 1.0 to handle edge cases
+    # where Polymarket markets settle near but not exactly at 1.0 (e.g. 0.95-0.98).
+    RESOLVED_THRESHOLD: float = 0.90
+
     def __init__(self, db_path: Path | None = None) -> None:
         self.db_path = db_path or DEFAULT_DB_PATH
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -926,7 +931,7 @@ class RealDataFetcher:
         for o_str, p_val in zip(outcome_list, price_list):
             if o_str.upper() == "YES":
                 yes_price = p_val
-                if p_val >= 0.95:
+                if p_val >= self.RESOLVED_THRESHOLD:
                     winning = True
             elif o_str.upper() == "NO":
                 no_price = p_val

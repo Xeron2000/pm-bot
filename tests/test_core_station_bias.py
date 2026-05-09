@@ -4,6 +4,7 @@ import tempfile
 from pathlib import Path
 
 from pm_bot.core.station_bias import (
+    STATION_PRIORS,
     StationBiasDB,
     StationBiasEntry,
     _lead_time_bucket,
@@ -62,10 +63,11 @@ class TestStationBiasDB:
         bias = db.get_bias("KLGA")
         assert bias > 0
 
-    def test_below_warmup_returns_zero(self):
+    def test_below_warmup_returns_prior_or_zero(self):
         db = StationBiasDB()
         for _ in range(WARMUP_DAYS - 1):
             db.record("KLGA", observed_c=25.0, predicted_c=24.0)
+        # KLGA is not in STATION_PRIORS, so 0.0 fallback
         assert db.get_bias("KLGA") == 0.0
 
     def test_apply_correction(self):
@@ -119,4 +121,35 @@ class TestStationBiasDB:
         assert DEFAULT_ALPHA == 0.15
 
     def test_warmup_days(self):
-        assert WARMUP_DAYS == 10
+        assert WARMUP_DAYS == 30
+
+    def test_below_warmup_returns_prior_for_known_station(self):
+        db = StationBiasDB()
+        for _ in range(3):
+            db.record("New York", observed_c=25.0, predicted_c=24.0)
+        assert db.get_bias("New York") == 0.7
+
+    def test_below_warmup_returns_zero_for_unknown_station(self):
+        db = StationBiasDB()
+        for _ in range(3):
+            db.record("KLGA", observed_c=25.0, predicted_c=24.0)
+        assert db.get_bias("KLGA") == 0.0
+
+    def test_prior_overridden_after_warmup(self):
+        db = StationBiasDB()
+        for _ in range(WARMUP_DAYS + 1):
+            db.record("New York", observed_c=25.0, predicted_c=20.0)
+        # After warmup, EMA bias should dominate over prior
+        assert db.get_bias("New York") > 1.0
+
+    def test_station_priors_values(self):
+        assert STATION_PRIORS["New York"] == 0.7
+        assert STATION_PRIORS["London"] == 0.8
+        assert STATION_PRIORS["Hong Kong"] == 0.5
+        assert STATION_PRIORS["Miami"] == 0.6
+        assert STATION_PRIORS["Dallas"] == 1.1
+        assert STATION_PRIORS["Seoul"] == 0.9
+        assert STATION_PRIORS["Tokyo"] == 0.8
+        assert STATION_PRIORS["Shanghai"] == 0.9
+        assert STATION_PRIORS["Beijing"] == 0.9
+        assert STATION_PRIORS["Paris"] == 0.7

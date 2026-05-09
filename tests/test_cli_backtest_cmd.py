@@ -32,7 +32,7 @@ class TestRunBacktest:
             bankroll=100.0, days=90, cities_str="NYC", csv_path=None,
             real=False, stop_loss=0.0, kelly=0.25, max_pos=0.10,
             no_compound=False, live=False, compare_forecast=False,
-            forecast_penalty=0.05, portfolio=False, seed=None, debug=False,
+            forecast_penalty=0.05, portfolio=False, seed=None, spread=0.0, debug=False,
         )
 
     @pytest.mark.asyncio
@@ -50,7 +50,7 @@ class TestRunBacktest:
             bankroll=100.0, days=90, cities_str="NYC", csv_path=None,
             real=False, stop_loss=0.0, kelly=0.25, max_pos=0.10,
             no_compound=False, live=False, compare_forecast=False,
-            forecast_penalty=0.05, portfolio=False, seed=None, debug=False,
+            forecast_penalty=0.05, portfolio=False, seed=None, spread=0.0, debug=False,
         )
 
     @pytest.mark.asyncio
@@ -62,7 +62,7 @@ class TestRunBacktest:
             bankroll=100.0, days=90, cities_str="NYC", csv_path=None,
             real=False, stop_loss=0.0, kelly=0.25, max_pos=0.10,
             no_compound=False, live=False, compare_forecast=False,
-            forecast_penalty=0.05, portfolio=False, seed=None, debug=False,
+            forecast_penalty=0.05, portfolio=False, seed=None, spread=0.0, debug=False,
         )
 
     @pytest.mark.asyncio
@@ -83,7 +83,7 @@ class TestRunBacktest:
             bankroll=100.0, days=90, cities_str="NYC", csv_path=None,
             real=False, stop_loss=0.0, kelly=0.25, max_pos=0.10,
             no_compound=False, live=False, compare_forecast=False,
-            forecast_penalty=0.05, portfolio=False, seed=None, debug=False,
+            forecast_penalty=0.05, portfolio=False, seed=None, spread=0.0, debug=False,
         )
         mock_render.assert_called_once()
 
@@ -104,7 +104,7 @@ class TestRunBacktest:
             bankroll=100.0, days=90, cities_str="NYC", csv_path=None,
             real=False, stop_loss=0.0, kelly=0.25, max_pos=0.10,
             no_compound=False, live=False, compare_forecast=False,
-            forecast_penalty=0.05, portfolio=False, seed=None, debug=False,
+            forecast_penalty=0.05, portfolio=False, seed=None, spread=0.0, debug=False,
         )
         mock_render.assert_called_once()
 
@@ -126,7 +126,7 @@ class TestRunBacktest:
             bankroll=100.0, days=90, cities_str="NYC", csv_path="/tmp/test.csv",
             real=False, stop_loss=0.0, kelly=0.25, max_pos=0.10,
             no_compound=False, live=False, compare_forecast=False,
-            forecast_penalty=0.05, portfolio=False, seed=None, debug=False,
+            forecast_penalty=0.05, portfolio=False, seed=None, spread=0.0, debug=False,
         )
         mock_csv.assert_called_once()
 
@@ -145,7 +145,7 @@ class TestRunBacktest:
             bankroll=100.0, days=90, cities_str="NYC", csv_path=None,
             real=True, stop_loss=0.0, kelly=0.25, max_pos=0.10,
             no_compound=False, live=False, compare_forecast=False,
-            forecast_penalty=0.05, portfolio=False, seed=None, debug=False,
+            forecast_penalty=0.05, portfolio=False, seed=None, spread=0.0, debug=False,
         )
 
     @pytest.mark.asyncio
@@ -163,7 +163,7 @@ class TestRunBacktest:
             bankroll=100.0, days=90, cities_str="NYC", csv_path=None,
             real=False, stop_loss=0.0, kelly=0.25, max_pos=0.10,
             no_compound=True, live=False, compare_forecast=False,
-            forecast_penalty=0.05, portfolio=False, seed=None, debug=False,
+            forecast_penalty=0.05, portfolio=False, seed=None, spread=0.0, debug=False,
         )
 
     @pytest.mark.asyncio
@@ -181,7 +181,7 @@ class TestRunBacktest:
             bankroll=100.0, days=90, cities_str="NYC,London", csv_path=None,
             real=False, stop_loss=0.0, kelly=0.25, max_pos=0.10,
             no_compound=False, live=False, compare_forecast=False,
-            forecast_penalty=0.05, portfolio=False, seed=None, debug=False,
+            forecast_penalty=0.05, portfolio=False, seed=None, spread=0.0, debug=False,
         )
 
     @pytest.mark.asyncio
@@ -199,7 +199,7 @@ class TestRunBacktest:
                 bankroll=100.0, days=90, cities_str="NYC", csv_path=None,
                 real=False, stop_loss=0.0, kelly=0.25, max_pos=0.10,
                 no_compound=False, live=False, compare_forecast=False,
-                forecast_penalty=0.05, portfolio=False, seed=None, debug=False,
+                forecast_penalty=0.05, portfolio=False, seed=None, spread=0.0, debug=False,
             )
 
     @pytest.mark.asyncio
@@ -217,7 +217,7 @@ class TestRunBacktest:
             bankroll=100.0, days=90, cities_str="NYC", csv_path=None,
             real=False, stop_loss=0.0, kelly=0.25, max_pos=0.10,
             no_compound=False, live=False, compare_forecast=False,
-            forecast_penalty=0.05, portfolio=False, seed=42, debug=False,
+            forecast_penalty=0.05, portfolio=False, seed=42, spread=0.0, debug=False,
         )
 
     @pytest.mark.asyncio
@@ -235,7 +235,7 @@ class TestRunBacktest:
             bankroll=100.0, days=90, cities_str="NYC", csv_path=None,
             real=False, stop_loss=0.0, kelly=0.25, max_pos=0.10,
             no_compound=False, live=False, compare_forecast=False,
-            forecast_penalty=0.10, portfolio=False, seed=None, debug=False,
+            forecast_penalty=0.10, portfolio=False, seed=None, spread=0.0, debug=False,
         )
 
     @pytest.mark.asyncio
@@ -254,7 +254,7 @@ class TestRunBacktest:
             bankroll=100.0, days=90, cities_str="NYC", csv_path=None,
             real=False, stop_loss=0.0, kelly=0.25, max_pos=0.10,
             no_compound=False, live=True, compare_forecast=False,
-            forecast_penalty=0.05, portfolio=False, seed=None, debug=False,
+            forecast_penalty=0.05, portfolio=False, seed=None, spread=0.0, debug=False,
         )
 
         mock_engine.run_real.assert_awaited_once()

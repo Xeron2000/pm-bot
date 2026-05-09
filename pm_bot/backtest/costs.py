@@ -15,6 +15,9 @@ class FillModel:
 
     fill_prob_at_best: float = 0.50
     fill_prob_inside: float = 0.25
+    # Calibrated for Polymarket's thin orderbook weather markets.
+    # Tail buckets ($0.01-$0.15 and $0.85+) have very few resting orders,
+    # so limit orders rarely fill — 10% fill rate reflects observed liquidity.
     fill_prob_tail: float = 0.10
     tail_low: float = 0.01
     tail_high: float = 0.15

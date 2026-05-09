@@ -13,7 +13,7 @@ from pm_bot.backtest.metrics import calculate_metrics
 from pm_bot.backtest.real_data import RealDataFetcher, ResolvedEvent
 from pm_bot.core.kelly import kelly_size
 from pm_bot.core.parser import parse_bucket
-from pm_bot.models.market import ForecastResult, TemperatureBucket, WeatherEvent
+from pm_bot.models.market import ForecastResult, Recommendation, TemperatureBucket, WeatherEvent
 
 log = structlog.get_logger()
 
@@ -70,6 +70,7 @@ class BacktestEngine:
         preloaded_fetcher: RealDataFetcher | None = None,
         preloaded_events: list | None = None,
         spread_pct: float = 0.0,
+        synthetic_only: bool = False,
     ) -> None:
         self.strategies = strategies
         self.bankroll = bankroll
@@ -84,6 +85,7 @@ class BacktestEngine:
         self.live_mode = live_mode
         self.seed = seed
         self.spread_pct = spread_pct
+        self.synthetic_only = synthetic_only
         self._preloaded_fetcher = preloaded_fetcher
         self._preloaded_events = preloaded_events
         if fill_model is not None:
@@ -108,10 +110,28 @@ class BacktestEngine:
                 for day_offset in range(self.days):
                     run_date = today - timedelta(days=self.days - day_offset)
                     date_str = run_date.isoformat()
+                    date_str = run_date.isoformat()
 
                     for city in self.cities:
-                        forecast = await fetcher.fetch_historical_forecasts(client, city, date_str)
-                        obs_temp = await fetcher.fetch_historical_observations(client, city, date_str)
+                        if self.synthetic_only:
+                            # Generate synthetic ForecastResult with realistic spread
+                            import random as _rng
+                            _seed = hash(f"{city}{date_str}") % 2**32
+                            _r = _rng.Random(_seed)
+                            temp_high = 20 + _r.uniform(-5, 15)  # Random temp 15-35C
+                            # Create ForecastResult with 200 ensemble members for good probability estimation
+                            from pm_bot.models.market import ForecastResult
+                            forecast = ForecastResult(
+                                city=city,
+                                date=date_str,
+                                model="synthetic",
+                                temp_high_c=temp_high,
+                                members=[temp_high + _r.gauss(0, 3.0) for _ in range(200)],
+                            )
+                            obs_temp = temp_high + _r.gauss(0, 1)  # Slightly different observation
+                        else:
+                            forecast = await fetcher.fetch_historical_forecasts(client, city, date_str)
+                            obs_temp = await fetcher.fetch_historical_observations(client, city, date_str)
 
                         if not forecast:
                             continue
@@ -134,76 +154,42 @@ class BacktestEngine:
                         recs = strat.run(event, **kwargs)
 
                         for rec in recs:
+                            effective_price = rec.price
                             side = self.costs.live_side if self.live_mode else "taker"
-                            if self.live_mode and rec.edge < self.costs.live_min_edge:
-                                continue
-                            size = kelly_size(
-                                edge=rec.edge,
-                                yes_price=rec.bucket.yes_price,
-                                bankroll=current_bankroll,
-                                kelly_fraction_val=self.kelly_fraction_val,
-                                max_single=current_bankroll * self.max_single_pct,
-                            )
-                            size = min(size, self.max_notional)
-                            if self.live_mode:
-                                size = min(size, self.costs.live_max_position_usd / max(rec.price, 0.01))
-                            if self.live_mode and not self.costs.passes_live_filter(rec.edge, size):
+
+                            size = self._compute_position_size(rec, current_bankroll, effective_price)
+                            if size is None:
                                 continue
                             if size * rec.bucket.yes_price < 0.5:
                                 continue
 
-                            cost = self.costs.calculate_cost(side, rec.price, size)
+                            hit = self._bucket_hit(rec.bucket, obs_temp) if obs_temp is not None else None
                             resolved = obs_temp is not None
-                            pnl = 0.0
 
-                            if resolved and obs_temp is not None:
-                                hit = self._bucket_hit(rec.bucket, obs_temp)
-                                if rec.direction == "YES":
-                                    pnl = size * (1.0 - rec.price) - cost if hit else -size * rec.price - cost
-                                else:
-                                    pnl = size * (1.0 - rec.price) - cost if not hit else -size * rec.price - cost
-
-                            trade = SimulatedTrade(
-                                date=date_str,
-                                strategy=strat.name,
-                                bucket_key=f"{rec.bucket.temp_low_c}-{rec.bucket.temp_high_c}",
-                                direction=rec.direction,
-                                price=rec.price,
-                                size_usd=size,
-                                cost=cost,
-                                pnl=pnl,
+                            trade = self._resolve_trade(
+                                rec=rec,
+                                effective_price=effective_price,
+                                side=side,
+                                size=size,
+                                source="clob",
+                                hit=hit,
                                 resolved=resolved,
+                                date_str=date_str,
+                                strategy_name=strat.name,
                             )
                             trades.append(trade)
 
-                            if resolved:
-                                current_bankroll += pnl
+                            if trade.resolved:
+                                current_bankroll += trade.pnl
                                 current_bankroll = max(current_bankroll, 0.01)
-                                cumulative_pnl += pnl
+                                cumulative_pnl += trade.pnl
                                 if not self.compound:
                                     current_bankroll = self.bankroll
 
-                    bankroll_series.append(current_bankroll + (cumulative_pnl if not self.compound else 0.0))
+                    self._append_bankroll_series(bankroll_series, current_bankroll, cumulative_pnl)
 
                 metrics = calculate_metrics(trades, bankroll_series)
-
-                results.append(
-                    BacktestResult(
-                        strategy_name=strat.name,
-                        bankroll=self.bankroll,
-                        final_value=self.bankroll
-                        + (cumulative_pnl if not self.compound else current_bankroll - self.bankroll),
-                        total_pnl=cumulative_pnl if not self.compound else current_bankroll - self.bankroll,
-                        trades=trades,
-                        sharpe_ratio=metrics.get("sharpe", 0.0),
-                        sortino_ratio=metrics.get("sortino", 0.0),
-                        max_drawdown=metrics.get("max_drawdown", 0.0),
-                        win_rate=metrics.get("win_rate", 0.0),
-                        avg_win=metrics.get("avg_win", 0.0),
-                        avg_loss=metrics.get("avg_loss", 0.0),
-                        brier_score=metrics.get("brier_score", 0.0),
-                    )
-                )
+                results.append(self._build_result(strat.name, cumulative_pnl, current_bankroll, trades, metrics))
 
         return results
 
@@ -256,6 +242,152 @@ class BacktestEngine:
         else:
             # Mid bucket: buy at ask (spread_pct as ask price)
             return min(self.spread_pct, 0.99)
+
+    def _compute_position_size(
+        self,
+        rec: Recommendation,
+        current_bankroll: float,
+        effective_price: float,
+    ) -> float | None:
+        """Compute Kelly-capped position size. Returns None if trade should be skipped."""
+        if self.live_mode and rec.edge < self.costs.live_min_edge:
+            return None
+
+        size = kelly_size(
+            edge=rec.edge,
+            yes_price=effective_price,
+            bankroll=current_bankroll,
+            kelly_fraction_val=self.kelly_fraction_val,
+            max_single=current_bankroll * self.max_single_pct,
+        )
+        size = min(size, self.max_notional)
+        if self.live_mode:
+            size = min(size, self.costs.live_max_position_usd / max(effective_price, 0.01))
+        if self.live_mode and not self.costs.passes_live_filter(rec.edge, size):
+            return None
+        return size
+
+    def _resolve_trade(
+        self,
+        rec: Recommendation,
+        effective_price: float,
+        side: str,
+        size: float,
+        source: str,
+        hit: bool | None,
+        resolved: bool,
+        date_str: str,
+        strategy_name: str,
+    ) -> SimulatedTrade:
+        """Resolve a single trade: fill model, costs, PnL, stop loss.
+
+        Args:
+            rec: Strategy recommendation.
+            effective_price: Entry price (with spread applied).
+            side: Cost model side ("taker" or "maker").
+            size: Position size in contracts.
+            source: Price source ("clob", "dune", "forecast", etc.).
+            hit: Whether the bucket hit (None if unresolved).
+            resolved: Whether the event is settled.
+            date_str: Trade date string.
+            strategy_name: Strategy name for the trade record.
+        """
+        # FillModel: Bernoulli trial for maker-side orders in live mode
+        filled = True
+        if self.live_mode and side == "maker" and self.costs.fill_model is not None:
+            fill_prob = self.costs.fill_model.fill_probability(effective_price)
+            filled = self._rng.random() < fill_prob
+
+        if not filled:
+            return SimulatedTrade(
+                date=date_str,
+                strategy=strategy_name,
+                bucket_key=f"{rec.bucket.temp_low_c:.0f}-{rec.bucket.temp_high_c:.0f}",
+                direction=rec.direction,
+                price=effective_price,
+                size_usd=size,
+                cost=0.0,
+                pnl=0.0,
+                resolved=resolved,
+                entry_price=effective_price,
+                stop_loss_pct=self.stop_loss_pct,
+                price_source=source,
+                filled=False,
+            )
+
+        cost = self.costs.calculate_cost(side, effective_price, size)
+        if source == "forecast":
+            cost += self.costs.forecast_penalty_cost(effective_price, size)
+
+        no_price = 1.0 - effective_price
+
+        if not resolved or hit is None:
+            pnl = 0.0
+        else:
+            if rec.direction == "YES":
+                raw_pnl = size * (1.0 - effective_price) if hit else -size * effective_price
+            else:
+                raw_pnl = size * (1.0 - effective_price) if not hit else -size * effective_price
+
+            pnl = raw_pnl - cost
+
+            # Stop loss: cap downside at stop_loss_pct of max investment
+            if self.stop_loss_pct > 0 and raw_pnl < 0:
+                max_investment = size * (no_price if rec.direction == "NO" else effective_price)
+                max_loss = max_investment * self.stop_loss_pct
+                if abs(raw_pnl) > max_loss:
+                    slippage = self.costs.stop_loss_slippage(max_investment)
+                    pnl = -max_loss - cost - slippage
+
+        return SimulatedTrade(
+            date=date_str,
+            strategy=strategy_name,
+            bucket_key=f"{rec.bucket.temp_low_c:.0f}-{rec.bucket.temp_high_c:.0f}",
+            direction=rec.direction,
+            price=effective_price,
+            size_usd=size,
+            cost=cost,
+            pnl=pnl,
+            resolved=resolved,
+            entry_price=effective_price,
+            stop_loss_pct=self.stop_loss_pct,
+            price_source=source,
+            filled=True,
+        )
+
+    def _append_bankroll_series(
+        self,
+        bankroll_series: list[float],
+        current_bankroll: float,
+        cumulative_pnl: float,
+    ) -> None:
+        """Append one entry to the bankroll series, respecting compound mode."""
+        bankroll_series.append(current_bankroll + (cumulative_pnl if not self.compound else 0.0))
+
+    def _build_result(
+        self,
+        strategy_name: str,
+        cumulative_pnl: float,
+        current_bankroll: float,
+        trades: list[SimulatedTrade],
+        metrics: dict[str, float],
+    ) -> BacktestResult:
+        """Build a BacktestResult from completed trade data."""
+        return BacktestResult(
+            strategy_name=strategy_name,
+            bankroll=self.bankroll,
+            final_value=self.bankroll
+            + (cumulative_pnl if not self.compound else current_bankroll - self.bankroll),
+            total_pnl=cumulative_pnl if not self.compound else current_bankroll - self.bankroll,
+            trades=trades,
+            sharpe_ratio=metrics.get("sharpe", 0.0),
+            sortino_ratio=metrics.get("sortino", 0.0),
+            max_drawdown=metrics.get("max_drawdown", 0.0),
+            win_rate=metrics.get("win_rate", 0.0),
+            avg_win=metrics.get("avg_win", 0.0),
+            avg_loss=metrics.get("avg_loss", 0.0),
+            brier_score=metrics.get("brier_score", 0.0),
+        )
 
     async def run_real(self) -> list[BacktestResult]:
         """Run backtest using real Polymarket resolved + active events + CLOB prices.
@@ -359,116 +491,41 @@ class BacktestEngine:
                         side = self.costs.live_side if self.live_mode else "taker"
                         source = price_sources.get(rec.bucket.market_id, "clob")
 
-                        size = kelly_size(
-                            edge=rec.edge,
-                            yes_price=effective_price,
-                            bankroll=current_bankroll,
-                            kelly_fraction_val=self.kelly_fraction_val,
-                            max_single=current_bankroll * self.max_single_pct,
-                        )
-                        size = min(size, self.max_notional)
-                        if self.live_mode:
-                            size = min(size, self.costs.live_max_position_usd / max(effective_price, 0.01))
-                        if self.live_mode and not self.costs.passes_live_filter(rec.edge, size):
+                        size = self._compute_position_size(rec, current_bankroll, effective_price)
+                        if size is None:
                             continue
                         if size * effective_price < 0.5:
                             continue
 
-                        # FillModel: Bernoulli trial for maker-side orders in live mode
-                        filled = True
-                        if self.live_mode and side == "maker" and self.costs.fill_model is not None:
-                            fill_prob = self.costs.fill_model.fill_probability(effective_price)
-                            filled = self._rng.random() < fill_prob
-                            if not filled:
-                                skip_count += 1
-                                # Log skip but still record for transparency
-                                trade = SimulatedTrade(
-                                    date=ev.target_date,
-                                    strategy=strat.name,
-                                    bucket_key=f"{rec.bucket.temp_low_c:.0f}-{rec.bucket.temp_high_c:.0f}",
-                                    direction=rec.direction,
-                                    price=effective_price,
-                                    size_usd=size,
-                                    cost=0.0,
-                                    pnl=0.0,
-                                    resolved=True,
-                                    entry_price=effective_price,
-                                    stop_loss_pct=self.stop_loss_pct,
-                                    price_source=source,
-                                    filled=False,
-                                )
-                                trades.append(trade)
-                                continue
-                            fill_count += 1
-
-                        cost = self.costs.calculate_cost(side, effective_price, size)
-
-                        # Forecast penalty: add conservative cost for forecast-derived prices
-                        if source == "forecast":
-                            cost += self.costs.forecast_penalty_cost(effective_price, size)
-
                         hit = self._real_bucket_hit(ev, rec.bucket)
-
-                        no_price = 1.0 - effective_price
-
-                        if rec.direction == "YES":
-                            raw_pnl = size * (1.0 - effective_price) if hit else -size * effective_price
-                        else:
-                            raw_pnl = size * (1.0 - effective_price) if not hit else -size * effective_price
-
-                        pnl = raw_pnl - cost
-
-                        if self.stop_loss_pct > 0 and raw_pnl < 0:
-                            max_investment = size * (no_price if rec.direction == "NO" else effective_price)
-                            max_loss = max_investment * self.stop_loss_pct
-                            if abs(raw_pnl) > max_loss:
-                                slippage = self.costs.stop_loss_slippage(max_investment)
-                                pnl = -max_loss - cost - slippage
-
-                        trade = SimulatedTrade(
-                            date=ev.target_date,
-                            strategy=strat.name,
-                            bucket_key=f"{rec.bucket.temp_low_c:.0f}-{rec.bucket.temp_high_c:.0f}",
-                            direction=rec.direction,
-                            price=effective_price,
-                            size_usd=size,
-                            cost=cost,
-                            pnl=pnl,
+                        trade = self._resolve_trade(
+                            rec=rec,
+                            effective_price=effective_price,
+                            side=side,
+                            size=size,
+                            source=source,
+                            hit=hit,
                             resolved=True,
-                            entry_price=effective_price,
-                            stop_loss_pct=self.stop_loss_pct,
-                            price_source=source,
-                            filled=True,
+                            date_str=ev.target_date,
+                            strategy_name=strat.name,
                         )
                         trades.append(trade)
 
-                        current_bankroll += pnl
+                        if not trade.filled:
+                            skip_count += 1
+                            continue
+                        fill_count += 1
+
+                        current_bankroll += trade.pnl
                         current_bankroll = max(current_bankroll, 0.01)
-                        cumulative_pnl += pnl
+                        cumulative_pnl += trade.pnl
                         if not self.compound:
                             current_bankroll = self.bankroll
 
-                    bankroll_series.append(current_bankroll + (cumulative_pnl if not self.compound else 0.0))
+                    self._append_bankroll_series(bankroll_series, current_bankroll, cumulative_pnl)
 
                 metrics = calculate_metrics(trades, bankroll_series)
-
-                results.append(
-                    BacktestResult(
-                        strategy_name=strat.name,
-                        bankroll=self.bankroll,
-                        final_value=self.bankroll
-                        + (cumulative_pnl if not self.compound else current_bankroll - self.bankroll),
-                        total_pnl=cumulative_pnl if not self.compound else current_bankroll - self.bankroll,
-                        trades=trades,
-                        sharpe_ratio=metrics.get("sharpe", 0.0),
-                        sortino_ratio=metrics.get("sortino", 0.0),
-                        max_drawdown=metrics.get("max_drawdown", 0.0),
-                        win_rate=metrics.get("win_rate", 0.0),
-                        avg_win=metrics.get("avg_win", 0.0),
-                        avg_loss=metrics.get("avg_loss", 0.0),
-                        brier_score=metrics.get("brier_score", 0.0),
-                    )
-                )
+                results.append(self._build_result(strat.name, cumulative_pnl, current_bankroll, trades, metrics))
 
         if self.live_mode:
             log.info("fill_model_stats", filled=fill_count, skipped=skip_count)
@@ -555,8 +612,6 @@ class BacktestEngine:
 
                 # Merge signals from all strategies on the same event
                 # Key: (market_id, direction) — keep highest edge signal per bucket+direction
-                from pm_bot.models.market import Recommendation
-
                 best_recs: dict[tuple[str, str], Recommendation] = {}
                 rec_strats: dict[tuple[str, str], str] = {}
                 for strat in self.strategies:
@@ -574,119 +629,53 @@ class BacktestEngine:
 
                 # Cap total exposure per event to 3x single-pos limit
                 total_notional = 0.0
-                pending: list[tuple[Recommendation, str, str]] = []
+                pending: list[tuple[Recommendation, str, str, float]] = []
                 for key, rec in best_recs.items():
                     source = price_sources.get(rec.bucket.market_id, "clob")
                     effective_price = self._apply_spread(rec.price)
-                    size = kelly_size(
-                        edge=rec.edge,
-                        yes_price=effective_price,
-                        bankroll=current_bankroll,
-                        kelly_fraction_val=self.kelly_fraction_val,
-                        max_single=current_bankroll * self.max_single_pct,
-                    )
-                    size = min(size, self.max_notional)
-                    if self.live_mode:
-                        size = min(size, self.costs.live_max_position_usd / max(effective_price, 0.01))
-                    if self.live_mode and not self.costs.passes_live_filter(rec.edge, size):
+                    size = self._compute_position_size(rec, current_bankroll, effective_price)
+                    if size is None:
                         continue
                     if size * effective_price < 0.5:
                         continue
-                    pending.append((rec, source, rec_strats[key]))
+                    pending.append((rec, source, rec_strats[key], size))
                     total_notional += size * effective_price
 
                 max_exposure = current_bankroll * self.max_single_pct * 3
-                if total_notional > max_exposure and total_notional > 0:
-                    pass  # scale applied in execution loop below
 
                 # Execute merged signals
-                for rec, source, strat_name in pending:
+                for rec, source, strat_name, size in pending:
                     effective_price = self._apply_spread(rec.price)
                     side = self.costs.live_side if self.live_mode else "taker"
-                    size = kelly_size(
-                        edge=rec.edge,
-                        yes_price=effective_price,
-                        bankroll=current_bankroll,
-                        kelly_fraction_val=self.kelly_fraction_val,
-                        max_single=current_bankroll * self.max_single_pct,
-                    )
-                    size = min(size, self.max_notional)
-                    if self.live_mode:
-                        size = min(size, self.costs.live_max_position_usd / max(effective_price, 0.01))
                     if total_notional > max_exposure and total_notional > 0:
                         size = size * (max_exposure / total_notional)
 
-                    # FillModel
-                    filled = True
-                    if self.live_mode and side == "maker" and self.costs.fill_model is not None:
-                        fill_prob = self.costs.fill_model.fill_probability(effective_price)
-                        filled = self._rng.random() < fill_prob
-                        if not filled:
-                            skip_count += 1
-                            trade = SimulatedTrade(
-                                date=ev.target_date,
-                                strategy=strat_name,
-                                bucket_key=f"{rec.bucket.temp_low_c:.0f}-{rec.bucket.temp_high_c:.0f}",
-                                direction=rec.direction,
-                                price=effective_price,
-                                size_usd=size,
-                                cost=0.0,
-                                pnl=0.0,
-                                resolved=True,
-                                entry_price=effective_price,
-                                stop_loss_pct=self.stop_loss_pct,
-                                price_source=source,
-                                filled=False,
-                            )
-                            trades.append(trade)
-                            continue
-                        fill_count += 1
-
-                    cost = self.costs.calculate_cost(side, effective_price, size)
-                    if source == "forecast":
-                        cost += self.costs.forecast_penalty_cost(effective_price, size)
-
                     hit = self._real_bucket_hit(ev, rec.bucket)
-                    no_price = 1.0 - effective_price
-
-                    if rec.direction == "YES":
-                        raw_pnl = size * (1.0 - effective_price) if hit else -size * effective_price
-                    else:
-                        raw_pnl = size * (1.0 - effective_price) if not hit else -size * effective_price
-
-                    pnl = raw_pnl - cost
-
-                    if self.stop_loss_pct > 0 and raw_pnl < 0:
-                        max_investment = size * (no_price if rec.direction == "NO" else effective_price)
-                        max_loss = max_investment * self.stop_loss_pct
-                        if abs(raw_pnl) > max_loss:
-                            slippage = self.costs.stop_loss_slippage(max_investment)
-                            pnl = -max_loss - cost - slippage
-
-                    trade = SimulatedTrade(
-                        date=ev.target_date,
-                        strategy=strat_name,
-                        bucket_key=f"{rec.bucket.temp_low_c:.0f}-{rec.bucket.temp_high_c:.0f}",
-                        direction=rec.direction,
-                        price=effective_price,
-                        size_usd=size,
-                        cost=cost,
-                        pnl=pnl,
+                    trade = self._resolve_trade(
+                        rec=rec,
+                        effective_price=effective_price,
+                        side=side,
+                        size=size,
+                        source=source,
+                        hit=hit,
                         resolved=True,
-                        entry_price=effective_price,
-                        stop_loss_pct=self.stop_loss_pct,
-                        price_source=source,
-                        filled=True,
+                        date_str=ev.target_date,
+                        strategy_name=strat_name,
                     )
                     trades.append(trade)
 
-                    current_bankroll += pnl
+                    if not trade.filled:
+                        skip_count += 1
+                        continue
+                    fill_count += 1
+
+                    current_bankroll += trade.pnl
                     current_bankroll = max(current_bankroll, 0.01)
-                    cumulative_pnl += pnl
+                    cumulative_pnl += trade.pnl
                     if not self.compound:
                         current_bankroll = self.bankroll
 
-                bankroll_series.append(current_bankroll + (cumulative_pnl if not self.compound else 0.0))
+                self._append_bankroll_series(bankroll_series, current_bankroll, cumulative_pnl)
 
         if self.live_mode:
             log.info("portfolio_fill_stats", filled=fill_count, skipped=skip_count)
@@ -695,20 +684,7 @@ class BacktestEngine:
         if self._preloaded_fetcher is None:
             fetcher.close()
 
-        return BacktestResult(
-            strategy_name="portfolio",
-            bankroll=self.bankroll,
-            final_value=self.bankroll + (cumulative_pnl if not self.compound else current_bankroll - self.bankroll),
-            total_pnl=cumulative_pnl if not self.compound else current_bankroll - self.bankroll,
-            trades=trades,
-            sharpe_ratio=metrics.get("sharpe", 0.0),
-            sortino_ratio=metrics.get("sortino", 0.0),
-            max_drawdown=metrics.get("max_drawdown", 0.0),
-            win_rate=metrics.get("win_rate", 0.0),
-            avg_win=metrics.get("avg_win", 0.0),
-            avg_loss=metrics.get("avg_loss", 0.0),
-            brier_score=metrics.get("brier_score", 0.0),
-        )
+        return self._build_result("portfolio", cumulative_pnl, current_bankroll, trades, metrics)
 
     def _build_real_event_from_resolution(
         self,
@@ -880,21 +856,40 @@ class BacktestEngine:
     ) -> WeatherEvent:
         mean = forecast.mean
         buckets: list[TemperatureBucket] = []
-        for i in range(-4, 5):
-            low = mean + (i * 2.0) - 1.0
-            high = mean + (i * 2.0) + 1.0
+        # Use integer boundaries for buckets (like real Polymarket markets)
+        base = int(mean) - 8  # Start 8 degrees below mean
+        for i in range(9):  # 9 buckets
+            low = base + (i * 2)
+            high = low + 2
             from pm_bot.core.weather import bucket_probability_numpy
 
             prob = bucket_probability_numpy(forecast, low, high, "C")
+            # Add noise to market prices to create realistic edges
+            # Market prices are noisy estimates of true probability
+            # For tail buckets, market often overprices (higher than true prob)
+            # This creates buying opportunities when model says prob > market
+            if prob > 0.01:
+                # Normal bucket: market price has ±20% relative noise
+                noise = self._rng.gauss(0, 0.20) * prob
+                market_price = max(0.01, min(0.99, prob + noise))
+            else:
+                # Very low prob bucket: market often prices at 0.01-0.05
+                # even when true prob is near 0
+                market_price = self._rng.uniform(0.01, 0.05)
+            # For tail buckets (prob < 0.10), add extra noise
+            if prob < 0.10 and prob > 0:
+                noise_extra = self._rng.gauss(0, 0.03)  # Extra ±3% noise for tails
+                market_price = max(0.01, min(0.30, market_price + noise_extra))
+
             buckets.append(
                 TemperatureBucket(
                     market_id=f"synth_{city}_{date}_{i}",
-                    question=f"Temp {low:.0f}-{high:.0f}°C",
+                    question=f"Temp {low}-{high}°C",
                     temp_low=low,
                     temp_high=high,
                     temp_unit="C",
-                    yes_price=prob,
-                    no_price=1.0 - prob,
+                    yes_price=market_price,
+                    no_price=1.0 - market_price,
                     volume=0.0,
                 )
             )

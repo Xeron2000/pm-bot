@@ -48,8 +48,10 @@ def _make_forecast(temp_high_c=25.0, city="New York", std=None, members=None):
 
 
 class TestStrategyRegistry:
-    def test_only_gopfan2_registered(self):
-        assert list(ALL_STRATEGIES.keys()) == ["gopfan2"]
+    def test_all_strategies_registered(self):
+        """All active strategies are registered."""
+        expected = ["gopfan2", "laddering", "tail_no_barbell", "forecast_arb", "resolution_delay"]
+        assert list(ALL_STRATEGIES.keys()) == expected
 
     def test_registry_instances(self):
         assert isinstance(ALL_STRATEGIES["gopfan2"], Gopfan2Strategy)

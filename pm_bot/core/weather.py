@@ -16,7 +16,7 @@ ENSEMBLE_BASE = "https://ensemble-api.open-meteo.com/v1/ensemble"
 _forecast_cache: TTLCache[str, ForecastResult] = TTLCache(maxsize=128, ttl=CACHE_TTL["forecast"])
 
 # Open-Meteo GFS ensemble member key pattern
-_MEMBER_KEYS = [f"temperature_2m_max_member{i:02d}" for i in range(1, 36)]
+_MEMBER_KEYS = [f"temperature_2m_max_member{i:02d}" for i in range(1, 31)]
 
 
 async def fetch_forecast(

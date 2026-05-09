@@ -6,6 +6,21 @@ from pm_bot.models.market import Recommendation, WeatherEvent, ForecastResult
 class Strategy:
     name: str = "base"
 
+    def __init__(
+        self,
+        edge_threshold: float = 0.03,
+        bankroll: float = 100.0,
+        kelly_fraction: float = 0.25,
+        max_single_pct: float = 0.10,
+        min_notional: float = 0.50,
+        **kwargs,
+    ):
+        self.edge_threshold = edge_threshold
+        self.bankroll = bankroll
+        self.kelly_fraction = kelly_fraction
+        self.max_single_pct = max_single_pct
+        self.min_notional = min_notional
+
     @property
     def supports_backtest(self) -> bool:
         return True
@@ -41,6 +56,24 @@ class Gopfan2Strategy(Strategy):
 
     # Maximum mid price to consider (tail buckets only)
     MAX_TAIL_PRICE = 0.15
+
+    def __init__(
+        self,
+        edge_threshold: float = 0.03,
+        bankroll: float = 100.0,
+        kelly_fraction: float = 0.25,
+        max_single_pct: float = 0.10,
+        min_notional: float = 0.50,
+        **kwargs,
+    ):
+        super().__init__(
+            edge_threshold=edge_threshold,
+            bankroll=bankroll,
+            kelly_fraction=kelly_fraction,
+            max_single_pct=max_single_pct,
+            min_notional=min_notional,
+            **kwargs,
+        )
 
     def run(self, event: WeatherEvent, **kwargs) -> list[Recommendation]:
         defaults = self.get_defaults()
@@ -87,19 +120,28 @@ _all_strategies: dict[str, Strategy] | None = None
 
 
 def get_all_strategies() -> dict[str, Strategy]:
-    """Only gopfan2 (tail-YES lottery) is retained.
+    """All active strategies for Polymarket temperature markets.
 
-    All other strategies removed because:
-    - neg_risk_field_fade: core is tail-NO, live fill rate <1%
-    - neg_risk_sum: core is tail-NO, live fill rate <1%
-    - truncation_edge: mid-bucket trades are all negative EV
-    - ensemble_spread: total P&L was negative
-    - resolution_div: mid-bucket trades are all negative EV
+    Core strategies:
+    - gopfan2: tail-YES lottery tickets (mid ≤ $0.15)
+    - laddering: dense multi-bucket spread (neobrother style)
+    - tail_no_barbell: barbell of tail-NO + tail-YES (Hans323 style)
+    - forecast_arb: model vs market mispricing exploit
+    - resolution_delay: resolution timing edge
     """
     global _all_strategies
     if _all_strategies is None:
+        from pm_bot.strategies.laddering import LadderingStrategy
+        from pm_bot.strategies.tail_no_barbell import TailNoBarbellStrategy
+        from pm_bot.strategies.forecast_arb import ForecastArbStrategy
+        from pm_bot.strategies.resolution_delay import ResolutionDelayStrategy
+
         _all_strategies = {
             "gopfan2": Gopfan2Strategy(),
+            "laddering": LadderingStrategy(),
+            "tail_no_barbell": TailNoBarbellStrategy(),
+            "forecast_arb": ForecastArbStrategy(),
+            "resolution_delay": ResolutionDelayStrategy(),
         }
     return _all_strategies
 

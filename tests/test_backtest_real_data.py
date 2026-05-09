@@ -244,7 +244,7 @@ class TestRealDataFetcherFetchActiveMarketPrices:
                 }],
             }]
             empty = []
-            side_effects = [event_data] + [empty] * 30
+            side_effects = [event_data] + [empty] * (len(WEATHER_SERIES_SLUGS) - 1)
             with patch.object(fetcher, "_get_with_retry", new_callable=AsyncMock, side_effect=side_effects):
                 result = await fetcher.fetch_active_market_prices(client, days=30)
             assert "tok1" in result

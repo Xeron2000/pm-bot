@@ -62,8 +62,10 @@ def _sharpe(daily_returns: list[float]) -> float:
     if not daily_returns:
         return 0.0
     n = len(daily_returns)
+    if n < 2:
+        return 0.0
     mean_r = sum(daily_returns) / n
-    var = sum((r - mean_r) ** 2 for r in daily_returns) / n
+    var = sum((r - mean_r) ** 2 for r in daily_returns) / (n - 1)
     std_r = math.sqrt(var) if var > 0 else 0.0
     if std_r == 0:
         return 0.0
@@ -78,7 +80,7 @@ def _sortino(daily_returns: list[float]) -> float:
     downside = [r for r in daily_returns if r < 0]
     if not downside:
         return float("inf") if mean_r > 0 else 0.0
-    ds_var = sum(r**2 for r in downside) / len(downside)
+    ds_var = sum(r**2 for r in downside) / len(daily_returns)
     ds_std = math.sqrt(ds_var) if ds_var > 0 else 0.0
     if ds_std == 0:
         return 0.0
@@ -105,7 +107,11 @@ def _brier_score(trades: list) -> float:
         if not t.resolved:
             continue
         prob = t.price if t.direction == "YES" else 1.0 - t.price
-        outcome = 1.0 if t.pnl > 0 else 0.0
+        # Use bucket_hit if available; fall back to PnL sign as proxy.
+        if hasattr(t, "bucket_hit") and t.bucket_hit is not None:
+            outcome = 1.0 if t.bucket_hit else 0.0
+        else:
+            outcome = 1.0 if t.pnl > 0 else 0.0
         total += (prob - outcome) ** 2
         count += 1
     return total / count if count > 0 else 0.0

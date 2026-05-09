@@ -7,6 +7,7 @@ from pm_bot.models.config import (
     STRATEGY_DEFAULTS,
     CACHE_TTL,
 )
+from pm_bot.strategies.base import ALL_STRATEGIES
 
 
 class TestSourceForecast:
@@ -70,9 +71,11 @@ class TestCityAliases:
 
 
 class TestStrategyDefaults:
+    # Removed strategies (2026-05-07): resolution_div, neg_risk_sum,
+    # truncation_edge, ensemble_spread, neg_risk_field_fade
+
     def test_all_active_strategies_have_defaults(self):
-        active = ["gopfan2", "resolution_div", "neg_risk_sum", "truncation_edge", "ensemble_spread", "neg_risk_field_fade"]
-        for name in active:
+        for name in ALL_STRATEGIES:
             assert name in STRATEGY_DEFAULTS, f"{name} missing from STRATEGY_DEFAULTS"
 
     def test_gopfan2_params(self):

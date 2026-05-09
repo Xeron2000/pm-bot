@@ -75,7 +75,6 @@ DEFAULT_CITIES = [
     "Taipei",
     "Paris",
     "Denver",
-    "Miami",
     "Wellington",
     "Milan",
     "Wuhan",
@@ -97,7 +96,41 @@ DEFAULT_CITIES = [
 ]
 
 STRATEGY_DEFAULTS: dict[str, dict[str, float]] = {
-    "gopfan2": {"yes_max": 0.15},
+    "gopfan2": {"yes_max": 0.15, "no_min": 0.45},
+    "laddering": {
+        "spread_degrees": 7.0,
+        "buckets_to_use": 6,
+        "min_price": 0.03,
+        "max_price": 0.25,
+        "edge_threshold": 0.03,
+        "kelly_fraction": 0.60,
+        "max_single_pct": 0.50,
+    },
+    "tail_no_barbell": {
+        "tail_no_threshold": 0.85,
+        "tail_yes_threshold": 0.12,
+        "tail_no_alloc": 0.70,
+        "tail_yes_alloc": 0.30,
+        "min_edge_tail_no": 0.03,
+        "min_edge_tail_yes": 0.05,
+        "kelly_fraction": 0.60,
+        "max_single_pct": 0.50,
+    },
+    "forecast_arb": {
+        "min_mispricing": 0.15,
+        "min_model_prob": 0.05,
+        "max_market_price": 0.30,
+        "stale_hours": 6.0,
+        "kelly_fraction": 0.80,
+        "max_single_pct": 0.60,
+    },
+    "resolution_delay": {
+        "min_confidence": 0.80,
+        "max_hours_before_resolution": 12.0,
+        "min_price_gap": 0.10,
+        "kelly_fraction": 0.80,
+        "max_single_pct": 0.60,
+    },
 }
 
 CACHE_TTL: dict[str, int] = {
