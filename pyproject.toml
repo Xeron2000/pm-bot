@@ -1,7 +1,7 @@
 [project]
-name = "pm-bot"
+name = "pm-bots"
 version = "0.1.0"
-description = "Polymarket weather market strategy scanner CLI"
+description = "Polymarket prediction market trading bot collection"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
@@ -32,7 +32,7 @@ dev = [
 package = true
 
 [project.scripts]
-pm-bot = "pm_bot.cli.app:app"
+pm-bot = "bots.weather.cli.app:app"
 
 [tool.mypy]
 python_version = "3.12"
