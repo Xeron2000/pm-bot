@@ -84,3 +84,36 @@ Implemented Monte Carlo simulator, snowball metrics, 5 high-conviction strategie
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: Smart wallet bot + project restructure
+
+**Date**: 2026-05-10
+**Task**: Smart wallet bot + project restructure
+**Branch**: `main`
+
+### Summary
+
+Built complete Polymarket smart wallet copy-trading bot (Copy + Inverse strategies) with backtesting framework, slippage/latency models, and evidence chain documentation. Reorganized project into bot collection structure: bots/weather/, bots/smart_wallet/, shared/, docs/.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e401c58` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
