@@ -242,6 +242,7 @@ class CityVarianceDB:
 - `scan` 命令自动过滤
 - `watch` 命令自动过滤
 - `daemon` 命令自动过滤
+- `trade` 命令自动过滤
 - CLI: `pm-bot variance [--populate] [--all]`
 
 ### 阈值
@@ -255,6 +256,95 @@ class CityVarianceDB:
 ### Prior（先验）
 
 数据不足时使用预设 tier（基于研究 + 回测）。数据超过 10 条后切换为数据驱动。
+
+---
+
+## 策略配置参数传递 (2026-05-13)
+
+### 机制
+
+`STRATEGY_DEFAULTS` 在 `get_all_strategies()` 创建策略实例时传入构造函数，而非在 `run()` 时注入 kwargs。
+
+```python
+# base.py — get_all_strategies()
+from pm_bot.models.config import STRATEGY_DEFAULTS
+
+_all_strategies = {
+    "gopfan2": Gopfan2Strategy(**STRATEGY_DEFAULTS.get("gopfan2", {})),
+    "laddering": LadderingStrategy(**STRATEGY_DEFAULTS.get("laddering", {})),
+    # ...
+}
+```
+
+所有策略构造函数必须接受 `**kwargs` 以忽略未知 config key。
+
+### ⚠️ 反模式：run() kwargs 注入 config
+
+```python
+# ❌ 错误：config 在 run() 时注入，构造函数默认值被忽略
+kwargs = {}
+for k, v in STRATEGY_DEFAULTS.get(strat_name, {}).items():
+    kwargs[k] = v  # kelly_fraction 等永远不会生效
+recs = strat.run(ev, **kwargs)
+
+# ✅ 正确：config 在构造时传入，run() kwargs 仅用于运行时覆盖（如 bankroll）
+strat = Gopfan2Strategy(**STRATEGY_DEFAULTS.get("gopfan2", {}))
+recs = strat.run(ev, bankroll=actual_bankroll)  # 运行时覆盖
+```
+
+### 教训
+
+`STRATEGY_DEFAULTS` 包含两类 key：
+1. **构造函数参数** — `kelly_fraction`, `edge_threshold`, `max_position_usd` → 构造时生效
+2. **策略特有参数** — `min_mispricing`, `tail_no_threshold` → 构造时生效
+
+Daemon 的 `run()` kwargs 注入对这两类都无效（策略不从 kwargs 读这些 key）。
+
+---
+
+## Resolution Delay Edge 语义 (2026-05-13)
+
+### ⚠️ 踩坑：edge 定义不一致
+
+所有策略 edge = `model_prob - market_price`，但 resolution_delay 曾用 `edge = 1.0 - yes_price`（价格间隙）。
+
+这导致 daemon Kelly 重建 `p_true = yes_price + edge = yes_price + (1.0 - yes_price) = 1.0`，Kelly 认为 100% 胜率。
+
+### 修复
+
+```python
+# ❌ 错误
+edge = price_gap  # 1.0 - yes_price
+
+# ✅ 正确
+edge = confidence - b.yes_price  # model_prob - market_price
+```
+
+### 规则
+
+**所有策略的 edge 必须是 `model_prob - market_price`**，保持 Kelly 重建一致性。
+
+---
+
+## Staged Entry 集成 (2026-05-13)
+
+### 机制
+
+时间衰减仓位缩放：>48h skip, 48-24h 30%, 24-8h 60%, <8h full。
+
+```python
+# core/staged_entry.py
+apply_staged_entry_for_event(recs, event_date) -> list[Recommendation]
+```
+
+### 集成点
+
+| 流程 | staged entry |
+|------|-------------|
+| backtest | ✅ |
+| daemon | ✅ |
+| scan | ❌ (display only) |
+| trade | ❌ (manual) |
 
 ---
 
