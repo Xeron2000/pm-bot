@@ -164,14 +164,15 @@ def get_all_strategies() -> dict[str, Strategy]:
         from pm_bot.strategies.forecast_arb import ForecastArbStrategy
         from pm_bot.strategies.resolution_delay import ResolutionDelayStrategy
         from pm_bot.strategies.near_certain_bond import NearCertainBondStrategy
+        from pm_bot.models.config import STRATEGY_DEFAULTS
 
         _all_strategies = {
-            "gopfan2": Gopfan2Strategy(),
-            "laddering": LadderingStrategy(),
-            "tail_no_barbell": TailNoBarbellStrategy(),
-            "forecast_arb": ForecastArbStrategy(),
-            "resolution_delay": ResolutionDelayStrategy(),
-            "near_certain_bond": NearCertainBondStrategy(),
+            "gopfan2": Gopfan2Strategy(**STRATEGY_DEFAULTS.get("gopfan2", {})),
+            "laddering": LadderingStrategy(**STRATEGY_DEFAULTS.get("laddering", {})),
+            "tail_no_barbell": TailNoBarbellStrategy(**STRATEGY_DEFAULTS.get("tail_no_barbell", {})),
+            "forecast_arb": ForecastArbStrategy(**STRATEGY_DEFAULTS.get("forecast_arb", {})),
+            "resolution_delay": ResolutionDelayStrategy(**STRATEGY_DEFAULTS.get("resolution_delay", {})),
+            "near_certain_bond": NearCertainBondStrategy(**STRATEGY_DEFAULTS.get("near_certain_bond", {})),
         }
     return _all_strategies
 

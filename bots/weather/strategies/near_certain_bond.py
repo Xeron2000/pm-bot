@@ -28,6 +28,7 @@ class NearCertainBondStrategy(Strategy):
         max_yes_price: float = 0.99,
         min_model_prob: float = 0.98,
         max_per_event: int = 3,
+        **kwargs,
     ):
         super().__init__(
             edge_threshold=edge_threshold,

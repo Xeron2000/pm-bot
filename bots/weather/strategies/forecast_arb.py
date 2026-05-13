@@ -54,6 +54,7 @@ class ForecastArbStrategy(Strategy):
         max_position_usd: float = 2.0,
         min_mispricing: float = 0.15,
         max_market_price: float = 0.30,
+        min_model_prob: float = 0.05,
         **kwargs,
     ):
         super().__init__(
@@ -67,6 +68,7 @@ class ForecastArbStrategy(Strategy):
         )
         self.min_mispricing = min_mispricing
         self.max_market_price = max_market_price
+        self.min_model_prob = min_model_prob
 
     def run(self, event: WeatherEvent, **kwargs) -> list[Recommendation]:
         if not event.buckets:
@@ -83,7 +85,7 @@ class ForecastArbStrategy(Strategy):
         recs = []
         for b in event.buckets:
             model_prob = bucket_probability_numpy(forecast, b.temp_low_c, b.temp_high_c, b.temp_unit)
-            if model_prob <= 0:
+            if model_prob < self.min_model_prob:
                 continue
 
             market_price = b.yes_price

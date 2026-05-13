@@ -38,8 +38,7 @@ class LadderingStrategy(Strategy):
         min_price: float = 0.02,
         max_price: float = 0.15,
         max_ladder_cost: float = 0.90,
-        *,
-        rng: random.Random | None = None,
+        **kwargs,
     ):
         super().__init__(
             edge_threshold=edge_threshold,
@@ -54,7 +53,7 @@ class LadderingStrategy(Strategy):
         self.min_price = min_price
         self.max_price = max_price
         self.max_ladder_cost = max_ladder_cost
-        self._rng = rng or random.Random()
+        self._rng = random.Random()
 
     def run(self, event: WeatherEvent, **kwargs) -> list[Recommendation]:
         """Generate laddering recommendations for a weather event."""

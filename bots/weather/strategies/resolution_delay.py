@@ -102,6 +102,7 @@ class ResolutionDelayStrategy(Strategy):
 
             if raw_kelly > 0:
                 # Quarter Kelly, $1 max for high-risk strategy
+                edge = confidence - b.yes_price
                 kelly_per_trade = raw_kelly * self.kelly_fraction
                 position_usd = bankroll * kelly_per_trade
                 position_usd = min(position_usd, self.max_position_usd)  # $1 max
@@ -113,8 +114,8 @@ class ResolutionDelayStrategy(Strategy):
                         event=event,
                         bucket=b,
                         direction="YES",
-                        edge=price_gap,
-                        reasoning=f"RESOLUTION {b.temp_low_c}-{b.temp_high_c}C (conf={confidence:.1%}, gap={price_gap:.1%})",
+                        edge=edge,
+                        reasoning=f"RESOLUTION {b.temp_low_c}-{b.temp_high_c}C (conf={confidence:.1%}, edge={edge:.1%})",
                         size_usd=position_usd,
                         kelly_fraction=raw_kelly,
                     )

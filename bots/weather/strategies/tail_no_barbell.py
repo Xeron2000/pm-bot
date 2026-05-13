@@ -64,8 +64,7 @@ class TailNoBarbellStrategy(Strategy):
         tail_yes_alloc: float = 0.30,
         min_edge_tail_no: float = 0.03,
         min_edge_tail_yes: float = 0.08,
-        *,
-        rng: random.Random | None = None,
+        **kwargs,
     ):
         super().__init__(
             edge_threshold=edge_threshold,
@@ -81,7 +80,7 @@ class TailNoBarbellStrategy(Strategy):
         self.tail_yes_alloc = tail_yes_alloc
         self.min_edge_tail_no = min_edge_tail_no
         self.min_edge_tail_yes = min_edge_tail_yes
-        self._rng = rng or random.Random()
+        self._rng = random.Random()
 
     def run(self, event: WeatherEvent, **kwargs) -> list[Recommendation]:
         """Generate barbell recommendations for a weather event.

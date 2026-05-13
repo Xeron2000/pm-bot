@@ -121,7 +121,6 @@ STRATEGY_DEFAULTS: dict[str, dict[str, float]] = {
         "min_mispricing": 0.15,
         "min_model_prob": 0.05,
         "max_market_price": 0.30,
-        "stale_hours": 6.0,
         "kelly_fraction": 0.80,
         "max_single_pct": 0.60,
     },
