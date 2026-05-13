@@ -152,3 +152,36 @@ Implemented city variance filtering (core/city_variance.py, CLI pm-bot variance,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: Code review fixes — config alignment, edge semantics, dead code cleanup
+
+**Date**: 2026-05-13
+**Task**: Code review fixes — config alignment, edge semantics, dead code cleanup
+**Branch**: `main`
+
+### Summary
+
+Deep code review found 5 issues: (1) STRATEGY_DEFAULTS kelly_fraction never applied — fixed by passing config to constructors with **kwargs. (2) Resolution delay edge used price_gap instead of model-based — fixed to confidence - price. (3) Staged entry dead code — integrated into daemon. (4) City variance missing in trade.py — added. (5) Dead config keys (min_model_prob unimplemented, stale_hours removed). All 111 tests pass.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `42e378e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
