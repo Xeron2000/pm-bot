@@ -117,3 +117,38 @@ Built complete Polymarket smart wallet copy-trading bot (Copy + Inverse strategi
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: City variance filtering + commit cleanup
+
+**Date**: 2026-05-13
+**Task**: City variance filtering + commit cleanup
+**Branch**: `main`
+
+### Summary
+
+Implemented city variance filtering (core/city_variance.py, CLI pm-bot variance, integrated into scan/watch/daemon). Committed near-certain bond strategy, staged entry, and related changes. Added docs and gitignored legacy pm_bot/.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0b4004d` | (see git log) |
+| `579bfca` | (see git log) |
+| `75ea019` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

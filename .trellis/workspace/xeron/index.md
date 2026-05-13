@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 19
-- **Last Active**: 2026-05-10
+- **Total Sessions**: 20
+- **Last Active**: 2026-05-13
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~119 | Active |
+| `journal-2.md` | ~154 | Active |
 | `journal-1.md` | ~588 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 20 | 2026-05-13 | City variance filtering + commit cleanup | `0b4004d`, `579bfca`, `75ea019` | `main` |
 | 19 | 2026-05-10 | Smart wallet bot + project restructure | `e401c58` | `main` |
 | 18 | 2026-05-10 | 00 Aggressive Snowball - Monte Carlo + 5 Strategies | `4557bfc` | `main` |
 | 17 | 2026-05-07 | Fix P&L bug, add realistic spread, remove unviable strategies | `9e7f009`, `73c11a6`, `69ef7ce`, `97e0b57` | `main` |
