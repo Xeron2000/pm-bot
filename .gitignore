@@ -13,3 +13,6 @@ wheels/
 .claude/
 .cursor/
 config.toml
+
+# Legacy package structure
+pm_bot/
