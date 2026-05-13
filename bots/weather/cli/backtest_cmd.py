@@ -28,7 +28,7 @@ def backtest_run(
     ),
     all_strats: bool = typer.Option(False, "--all", help="Run all strategies"),
     compare: bool = typer.Option(False, "--compare", help="Show side-by-side comparison"),
-    bankroll: float = typer.Option(100.0, "--bankroll", "-b", help="Starting bankroll in USD"),
+    bankroll: float = typer.Option(1000.0, "--bankroll", "-b", help="Starting bankroll in USD"),
     days: int = typer.Option(90, "--days", "-d", help="Number of days to backtest"),
     cities: Optional[str] = typer.Option("NYC", "--cities", "-c", help="Comma-separated cities"),
     csv_path: Optional[str] = typer.Option(None, "--csv", help="Export results to CSV file"),
@@ -37,11 +37,11 @@ def backtest_run(
         0.0, "--stop-loss", help="Stop-loss as fraction of position (e.g. 0.5 = 50% stop-loss)"
     ),
     kelly: float = typer.Option(0.25, "--kelly", help="Kelly fraction (0.25=quarter, 0.5=half, 1.0=full)"),
-    max_pos: float = typer.Option(0.10, "--max-pos", help="Max single position as fraction of bankroll"),
+    max_pos: float = typer.Option(0.02, "--max-pos", help="Max single position as fraction of bankroll"),,
     no_compound: bool = typer.Option(False, "--no-compound", help="Disable compounding (fixed bankroll)"),
     live: bool = typer.Option(
-        False, "--live", help="Live-trading mode: maker-only, $50/pos cap, 8%+ edge, ghost-trade friction"
-    ),
+        False, "--live", help="Live-trading mode: maker-only, $10/pos cap, 8%+ edge, ghost-trade friction"
+    ),,
     compare_forecast: bool = typer.Option(
         False, "--compare-forecast", help="Dual-run: all markets vs CLOB-only, showing forecast bias delta"
     ),

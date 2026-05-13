@@ -35,14 +35,18 @@ from pm_bot.smart_wallet.models import (
 
 logger = structlog.get_logger(__name__)
 
-# Default strategy parameters
+# Default strategy parameters — Small Capital Optimized
+# Based on Polyloly research: 334 trades, +46.7% ROI at zero slippage
+# Realistic ROI after costs: +15-25% annually
+# Key filters: score ≥0.6, entry price ≤$0.65, min $5 trade size
 DEFAULT_PARAMS = {
     "min_wallet_score": 0.6,           # minimum composite_score to follow
-    "min_trade_usd": 100.0,            # minimum trade size to trigger signal
-    "max_entry_price_copy": 0.80,      # don't buy above 80c (copy)
-    "min_entry_price_inverse": 0.20,   # don't sell below 20c (inverse)
+    "min_trade_usd": 5.0,              # minimum trade size to trigger signal (reduced for small capital)
+    "max_entry_price_copy": 0.65,      # don't buy above 65c — alpha disappears above this (Polyloly data)
+    "min_entry_price_inverse": 0.60,   # only fade at high prices (raised from 0.20)
     "position_size_pct": 0.02,         # 2% of bankroll per trade
     "max_position_pct": 0.05,          # 5% max in single market
+    "max_position_usd": 10.0,          # $10 max per position (small capital cap)
     "max_concurrent_positions": 20,    # max open positions
     "cooldown_minutes": 30,            # min time between trades on same market
     "slippage_bps": 20,                # assumed slippage in basis points
@@ -55,13 +59,20 @@ DEFAULT_PARAMS = {
 
 
 class CopyStrategy:
-    """Follow smart wallet trades.
+    """Follow smart wallet trades — Small Capital Optimized.
+
+    Based on Polyloly research:
+    - 334 trades, 75.9% win rate, +46.7% ROI (zero slippage)
+    - Realistic ROI after costs: +15-25% annually
+    - Key filters: score ≥0.6, entry price ≤$0.65
+    - Quarter Kelly for conservative sizing
 
     Signal generation:
     1. Monitor real-time trades from tracked wallets
     2. Filter by wallet score, trade size, and price
     3. Generate BUY signal at current price + slippage
     4. Size position using Kelly fraction or fixed %
+    5. Cap at $10 per position for small capital
     """
 
     def __init__(self, params: Optional[dict] = None):
@@ -115,7 +126,7 @@ class CopyStrategy:
             bankroll=bankroll,
         )
 
-        if target_size < 10.0:  # minimum $10 position
+        if target_size < 5.0:  # minimum $5 position (small capital)
             return None
 
         # Calculate target entry price with slippage
@@ -169,7 +180,10 @@ class CopyStrategy:
         fraction = min(fraction, self.params["position_size_pct"])
         fraction = min(fraction, self.params["max_position_pct"])
 
-        return bankroll * fraction
+        size_usd = bankroll * fraction
+        # Cap at max_position_usd for small capital
+        size_usd = min(size_usd, self.params.get("max_position_usd", 10.0))
+        return size_usd
 
     def should_exit(
         self,
@@ -204,13 +218,22 @@ class InverseStrategy:
     Rationale: If smart money is buying at 80c, the market is already efficient,
     and the edge is gone. Better to fade late entries.
 
-    Inverse works best when:
-    - Smart wallet is buying at high prices (>0.60) — market is already pricing it in
-    - We're providing liquidity at the top of the market
+    NOTE: Inverse has weaker evidence than Copy. Use tighter filters.
+    Multiple sources suggest Copy is significantly better than Inverse.
     """
 
     def __init__(self, params: Optional[dict] = None):
-        self.params = {**DEFAULT_PARAMS, **(params or {})}
+        # Inverse strategy has weaker evidence than Copy.
+        # Use tighter filters and smaller position sizes.
+        inverse_defaults = {
+            "min_entry_price_inverse": 0.70,   # only fade at 70c+ (raised from 0.60)
+            "min_wallet_score": 0.7,            # need higher score to trust inverse
+            "min_trade_usd": 100.0,             # need higher conviction
+            "position_size_pct": 0.01,          # 1% per trade (half of Copy)
+            "max_position_pct": 0.03,           # 3% max (half of Copy)
+            "max_position_usd": 5.0,            # $5 max (smaller than Copy)
+        }
+        self.params = {**DEFAULT_PARAMS, **inverse_defaults, **(params or {})}
         self._cooldowns: dict[str, datetime] = {}
 
     def evaluate(

@@ -215,6 +215,49 @@ pm-bot backtest [OPTIONS]
 
 ---
 
+## City Variance Filtering
+
+### 机制
+
+追踪每个城市的预报误差统计（MAE、std、bias），跳过高波动城市：
+
+```python
+# core/city_variance.py
+class CityVarianceDB:
+    def record(city, predicted_c, observed_c)  # 记录误差
+    def get_tier(city) -> str  # low/medium/high/unknown
+    def is_tradeable(city, max_mae=3.5, max_std=4.0) -> bool
+```
+
+### Tier 分类
+
+| Tier | MAE 阈值 | 典型城市 |
+|------|----------|----------|
+| low  | < 2.0°C | Miami, LA, SF, HK, Jeddah, Lagos, Jakarta |
+| medium | 2.0-3.5°C | NYC, London, Tokyo, Seoul, Paris |
+| high | > 3.5°C | Chicago (spring temp swings) |
+
+### 集成点
+
+- `scan` 命令自动过滤
+- `watch` 命令自动过滤
+- `daemon` 命令自动过滤
+- CLI: `pm-bot variance [--populate] [--all]`
+
+### 阈值
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| max_mae | 3.5°C | 最大允许 MAE |
+| max_std | 4.0°C | 最大允许误差标准差 |
+| MIN_OBSERVATIONS | 10 | 最小样本数才启用数据驱动过滤 |
+
+### Prior（先验）
+
+数据不足时使用预设 tier（基于研究 + 回测）。数据超过 10 条后切换为数据驱动。
+
+---
+
 ## 未来改进方向
 
 1. **Out-of-sample 验证** — 拆分 train/test 数据，验证策略泛化能力

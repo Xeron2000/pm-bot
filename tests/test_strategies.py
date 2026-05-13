@@ -50,7 +50,7 @@ def _make_forecast(temp_high_c=25.0, city="New York", std=None, members=None):
 class TestStrategyRegistry:
     def test_all_strategies_registered(self):
         """All active strategies are registered."""
-        expected = ["gopfan2", "laddering", "tail_no_barbell", "forecast_arb", "resolution_delay"]
+        expected = ["gopfan2", "laddering", "tail_no_barbell", "forecast_arb", "resolution_delay", "near_certain_bond"]
         assert list(ALL_STRATEGIES.keys()) == expected
 
     def test_registry_instances(self):

@@ -46,8 +46,8 @@ class CostModel:
     ghost_trade_loss_pct: float = 0.02
 
     live_mode: bool = False
-    live_max_position_usd: float = 50.0
-    live_min_edge: float = 0.08
+    live_max_position_usd: float = 10.0  # $10 max for small capital
+    live_min_edge: float = 0.08          # 8% minimum edge (industry standard)
     live_side: str = "maker"
 
     forecast_penalty_pct: float = 0.05

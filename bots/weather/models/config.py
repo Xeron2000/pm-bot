@@ -100,11 +100,12 @@ STRATEGY_DEFAULTS: dict[str, dict[str, float]] = {
     "laddering": {
         "spread_degrees": 7.0,
         "buckets_to_use": 6,
-        "min_price": 0.03,
-        "max_price": 0.25,
-        "edge_threshold": 0.03,
-        "kelly_fraction": 0.60,
-        "max_single_pct": 0.50,
+        "min_price": 0.02,
+        "max_price": 0.15,
+        "edge_threshold": 0.08,
+        "kelly_fraction": 0.25,
+        "max_single_pct": 0.02,
+        "max_ladder_cost": 0.90,
     },
     "tail_no_barbell": {
         "tail_no_threshold": 0.85,
@@ -130,6 +131,14 @@ STRATEGY_DEFAULTS: dict[str, dict[str, float]] = {
         "min_price_gap": 0.10,
         "kelly_fraction": 0.80,
         "max_single_pct": 0.60,
+    },
+    "near_certain_bond": {
+        "min_yes_price": 0.95,
+        "max_yes_price": 0.99,
+        "min_model_prob": 0.98,
+        "kelly_fraction": 0.50,
+        "max_position_usd": 5.0,
+        "max_per_event": 3,
     },
 }
 

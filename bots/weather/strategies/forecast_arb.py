@@ -1,8 +1,22 @@
-"""
-Forecast Arbitrage Strategy for $100 Aggressive Snowball.
+"""Forecast Arbitrage Strategy — Small Capital Optimized.
 
-Exploits massive mispricings when the model forecast diverges significantly
+Exploits mispricings when the model forecast diverges significantly
 from market prices. Uses bucket_probability_numpy for model probability.
+
+This is the MOST promising strategy for small capital:
+- Model-based edge is independent of market structure
+- ECMWF/GFS forecasts are free and high quality
+- 85-90% accuracy at 24-48h out
+- Market often prices tails at 15-40% when true prob is 45%+
+
+Small-capital rules (research-backed):
+- 15% minimum mispricing (high-conviction only)
+- Max market price $0.30 (avoid overpaying)
+- $1-$2 per position, quarter Kelly
+- Max 3 recommendations per event (focus on best opportunities)
+- Use ensemble probability for robustness
+
+Source: PolymarketWeather strategy guide — "the most durable edge"
 """
 
 from __future__ import annotations
@@ -16,11 +30,16 @@ from pm_bot.strategies.base import Strategy
 
 
 class ForecastArbStrategy(Strategy):
-    """
-    Forecast arbitrage: exploit large model vs market mispricings.
+    """Forecast arbitrage: exploit large model vs market mispricings — small capital.
 
     Looks for buckets where model probability differs from market price
-    by more than a threshold. Buys YES when model >> market.
+    by more than 15%. Buys YES when model >> market.
+
+    Small-capital optimized:
+    - 15% minimum mispricing (high-conviction only)
+    - Max market price $0.30 (avoid overpaying)
+    - $1-$2 per position, quarter Kelly
+    - Max 3 recommendations per event
     """
 
     name = "forecast_arb"
@@ -28,10 +47,11 @@ class ForecastArbStrategy(Strategy):
     def __init__(
         self,
         edge_threshold: float = 0.15,
-        bankroll: float = 100.0,
-        kelly_fraction: float = 0.80,
-        max_single_pct: float = 0.60,
-        min_notional: float = 0.50,
+        bankroll: float = 1000.0,
+        kelly_fraction: float = 0.25,
+        max_single_pct: float = 0.02,
+        min_notional: float = 1.0,
+        max_position_usd: float = 2.0,
         min_mispricing: float = 0.15,
         max_market_price: float = 0.30,
         **kwargs,
@@ -42,6 +62,7 @@ class ForecastArbStrategy(Strategy):
             kelly_fraction=kelly_fraction,
             max_single_pct=max_single_pct,
             min_notional=min_notional,
+            max_position_usd=max_position_usd,
             **kwargs,
         )
         self.min_mispricing = min_mispricing
@@ -52,6 +73,8 @@ class ForecastArbStrategy(Strategy):
             return []
 
         forecast: ForecastResult | None = kwargs.get("forecast")
+        bankroll = kwargs.get("bankroll", self.bankroll)
+
         if not forecast or not forecast.members:
             return []
 
@@ -71,14 +94,14 @@ class ForecastArbStrategy(Strategy):
 
             # BUY YES when model >> market (underpriced)
             if mispricing >= self.min_mispricing and market_price <= self.max_market_price:
-                rec = self._build_yes_rec(event, b, model_prob, market_price, mispricing)
+                rec = self._build_yes_rec(event, b, model_prob, market_price, mispricing, bankroll)
                 if rec:
                     recs.append(rec)
 
         recs.sort(key=lambda r: r.edge, reverse=True)
-        return recs[:3]
+        return recs[:3]  # Max 3 recommendations per event
 
-    def _build_yes_rec(self, event, b, model_prob, market_price, mispricing):
+    def _build_yes_rec(self, event, b, model_prob, market_price, mispricing, bankroll):
         win_payout = 1.0 - market_price
         loss_amt = market_price
         raw_kelly = (model_prob * win_payout - (1 - model_prob) * loss_amt) / win_payout
@@ -86,9 +109,11 @@ class ForecastArbStrategy(Strategy):
         if raw_kelly <= 0:
             return None
 
-        capped_kelly = min(raw_kelly * self.kelly_fraction, self.max_single_pct)
-        position_size = max(self.bankroll * capped_kelly, self.min_notional)
-        position_size = min(position_size, self.bankroll)
+        # Quarter Kelly, capped at $2 per position
+        kelly_per_trade = raw_kelly * self.kelly_fraction
+        position_usd = bankroll * kelly_per_trade
+        position_usd = min(position_usd, self.max_position_usd)
+        position_usd = max(position_usd, self.min_notional)
 
         return Recommendation(
             strategy=self.name,
@@ -96,7 +121,7 @@ class ForecastArbStrategy(Strategy):
             bucket=b,
             direction="YES",
             edge=mispricing,
-            reasoning=f"ARB YES {b.temp_low_c}-{b.temp_high_c}C (model={model_prob:.1%} vs market={market_price:.1%})",
-            size_usd=position_size,
+            reasoning=f"ARB YES {b.temp_low_c}-{b.temp_high_c}C (model={model_prob:.1%} vs market={market_price:.1%}, mispricing={mispricing:.1%})",
+            size_usd=position_usd,
             kelly_fraction=raw_kelly,
         )

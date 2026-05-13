@@ -30,6 +30,7 @@ from pm_bot.core.polymarket import fetch_weather_events
 from pm_bot.core.risk import RiskManager, RiskCheckResult
 from pm_bot.core.weather import fetch_forecast
 from pm_bot.core.observation import fetch_observation, filter_recommendations
+from pm_bot.core.city_variance import filter_recommendations as filter_by_variance
 from pm_bot.models.config import DEFAULT_CITIES, STRATEGY_DEFAULTS, resolve_city_alias
 from pm_bot.models.forecast import ConsensusForecast
 from pm_bot.models.market import Recommendation, ForecastResult
@@ -225,6 +226,9 @@ class TradingDaemon:
 
                     if ev.city in obs_map:
                         recs = filter_recommendations(recs, obs_map[ev.city])
+
+                    # Filter by city variance
+                    recs = filter_by_variance(recs)
 
                     for rec in recs:
                         if rec.edge < 0.05:
