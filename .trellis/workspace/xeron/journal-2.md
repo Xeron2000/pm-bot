@@ -185,3 +185,36 @@ Deep code review found 5 issues: (1) STRATEGY_DEFAULTS kelly_fraction never appl
 ### Next Steps
 
 - None - task complete
+
+
+## Session 22: Project audit: prune dead strategies, fix Kelly params
+
+**Date**: 2026-05-14
+**Task**: Project audit: prune dead strategies, fix Kelly params
+**Branch**: `main`
+
+### Summary
+
+Full project audit based on web research. Deleted 4 unprofitable strategies (tail_no_barbell, laddering, resolution_delay, near_certain_bond), deleted smart_wallet bot (no trade execution), fixed dangerous Kelly params (0.80→0.25), kept gopfan2 + forecast_arb as core strategies.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `342eee1` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
