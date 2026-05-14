@@ -63,7 +63,6 @@ class Gopfan2Strategy(Strategy):
 
     name = "gopfan2"
 
-    # Maximum mid price to consider (tail buckets only)
     MAX_TAIL_PRICE = 0.15
 
     def __init__(
@@ -103,7 +102,7 @@ class Gopfan2Strategy(Strategy):
                 bucket_probability_numpy(forecast, b.temp_low_c, b.temp_high_c, b.temp_unit) if forecast else None
             )
 
-            # Only buy YES where model says probability > price + edge_threshold
+            # Require model validation — don't blind-buy
             if model_prob is not None:
                 edge = model_prob - b.yes_price
                 if edge < self.edge_threshold:
@@ -150,32 +149,19 @@ def get_all_strategies() -> dict[str, Strategy]:
     """All active strategies for Polymarket temperature markets.
 
     Core strategies:
-    - gopfan2: tail-YES lottery tickets (mid ≤ $0.15)
-    - laddering: dense multi-bucket spread (neobrother style)
-    - tail_no_barbell: barbell of tail-NO + tail-YES (Hans323 style)
+    - gopfan2: tail-YES lottery tickets (mid <= $0.15)
     - forecast_arb: model vs market mispricing exploit
-    - resolution_delay: resolution timing edge
-    - near_certain_bond: buy 95-99¢ YES on near-certain outcomes
     """
     global _all_strategies
     if _all_strategies is None:
-        from pm_bot.strategies.laddering import LadderingStrategy
-        from pm_bot.strategies.tail_no_barbell import TailNoBarbellStrategy
         from pm_bot.strategies.forecast_arb import ForecastArbStrategy
-        from pm_bot.strategies.resolution_delay import ResolutionDelayStrategy
-        from pm_bot.strategies.near_certain_bond import NearCertainBondStrategy
         from pm_bot.models.config import STRATEGY_DEFAULTS
 
         _all_strategies = {
             "gopfan2": Gopfan2Strategy(**STRATEGY_DEFAULTS.get("gopfan2", {})),
-            "laddering": LadderingStrategy(**STRATEGY_DEFAULTS.get("laddering", {})),
-            "tail_no_barbell": TailNoBarbellStrategy(**STRATEGY_DEFAULTS.get("tail_no_barbell", {})),
             "forecast_arb": ForecastArbStrategy(**STRATEGY_DEFAULTS.get("forecast_arb", {})),
-            "resolution_delay": ResolutionDelayStrategy(**STRATEGY_DEFAULTS.get("resolution_delay", {})),
-            "near_certain_bond": NearCertainBondStrategy(**STRATEGY_DEFAULTS.get("near_certain_bond", {})),
         }
     return _all_strategies
 
 
-# Eager load for backward compatibility
 ALL_STRATEGIES: dict[str, Strategy] = get_all_strategies()

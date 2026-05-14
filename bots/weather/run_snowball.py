@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-$100 Aggressive Snowball - One-Click Backtest Runner
+$100 Snowball - One-Click Backtest Runner
 
 Usage:
-    python run_100_snowball.py                    # Full backtest with all strategies
-    python run_100_snowball.py --strategy gopfan2  # Single strategy
-    python run_100_snowball.py --monte-carlo       # Monte Carlo simulation
-    python run_100_snowball.py --list              # List available strategies
+    python run_snowball.py                    # Full backtest with all strategies
+    python run_snowball.py --strategy gopfan2  # Single strategy
+    python run_snowball.py --monte-carlo       # Monte Carlo simulation
+    python run_snowball.py --list              # List available strategies
 """
 
 import argparse
@@ -24,7 +24,7 @@ from pm_bot.strategies.base import get_all_strategies
 
 
 async def run_backtest(strategy_name: str | None = None, days: int = 90, bankroll: float = 100.0):
-    """Run backtest with $100 aggressive parameters."""
+    """Run backtest with safe Kelly parameters."""
     strategies = get_all_strategies()
 
     if strategy_name:
@@ -37,21 +37,21 @@ async def run_backtest(strategy_name: str | None = None, days: int = 90, bankrol
         active_strategies = list(strategies.values())
 
     print("=" * 60)
-    print("💰 $100 AGGRESSIVE SNOWBALL BACKTEST")
+    print("💰 SNOWBALL BACKTEST")
     print("=" * 60)
     print(f"  Initial Bankroll: ${bankroll:,.2f}")
     print(f"  Days: {days}")
     print(f"  Strategies: {', '.join(s.name for s in active_strategies)}")
     print()
 
-    # Configure for $100 aggressive mode
+    # Configure with safe Kelly parameters
     engine = BacktestEngine(
         strategies=active_strategies,
         bankroll=bankroll,
         days=days,
-        kelly_fraction_val=0.60,  # Aggressive Kelly
-        max_single_pct=0.50,  # 50% max single
-        max_notional=bankroll * 0.80,  # 80% max total
+        kelly_fraction_val=0.25,  # Quarter Kelly (safe)
+        max_single_pct=0.02,  # 2% max single position
+        max_notional=bankroll * 0.70,  # 70% max total (30% cash reserve)
         compound=True,
         seed=42,
         synthetic_only=True,  # Use synthetic data for demo
@@ -97,9 +97,9 @@ async def run_monte_carlo(strategy_name: str | None = None, days: int = 90, bank
         strategies=active_strategies,
         bankroll=bankroll,
         days=days,
-        kelly_fraction_val=0.60,
-        max_single_pct=0.50,
-        max_notional=bankroll * 0.80,
+        kelly_fraction_val=0.25,
+        max_single_pct=0.02,
+        max_notional=bankroll * 0.70,
         compound=True,
         seed=42,
         synthetic_only=True,  # Use synthetic data for demo
@@ -164,7 +164,7 @@ async def run_monte_carlo(strategy_name: str | None = None, days: int = 90, bank
 
 
 def main():
-    parser = argparse.ArgumentParser(description="$100 Aggressive Snowball Backtester")
+    parser = argparse.ArgumentParser(description="Snowball Backtester")
     parser.add_argument("--strategy", "-s", type=str, help="Strategy name (default: all)")
     parser.add_argument("--days", "-d", type=int, default=90, help="Number of days to simulate")
     parser.add_argument("--bankroll", "-b", type=float, default=100.0, help="Initial bankroll")

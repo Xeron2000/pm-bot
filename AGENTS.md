@@ -19,17 +19,16 @@ pm/
 
 ## Bot 列表
 
-### 天气 Bot (`bots/weather/`)
-- **目标**: Polymarket 每日天气市场（NYC, London, Tokyo）
-- **策略**: `gopfan2` — 尾部YES彩票
+### Weather Bot (`bots/weather/`)
+- **目标**: Polymarket 每日天气市场（全球 33 城市）
+- **策略**: 2 个核心策略
+  - `gopfan2` — 尾部YES彩票（mid ≤ $0.15，kelly=0.25）
+  - `forecast_arb` — 模型 vs 市场定价偏差（15%+ mispricing，kelly=0.25）
 - **入口**: `pm-bot scan|trade|backtest|daemon`
 - **核心**: `bots/weather/core/`, `bots/weather/strategies/`
 
-### 聪明钱包 Bot (`bots/smart_wallet/`)
-- **目标**: 全平台跟单交易
-- **策略**: 跟随高胜率钱包 (Copy) + 逆向高价入场 (Inverse)
-- **入口**: `python bots/smart_wallet/run.py discover|backtest|live`
-- **核心**: `bots/smart_wallet/api.py`, `bots/smart_wallet/strategy.py`
+### ~~聪明钱包 Bot (`bots/smart_wallet/`)~~ — 已删除
+- 删除原因：只有信号生成无交易执行，回测未验证，不产生实际价值
 
 ## 共享模块 (`shared/`)
 
@@ -41,7 +40,6 @@ pm/
 
 | 文件 | 用途 |
 |------|------|
-| `docs/SMART_WALLET_STRATEGY.md` | 聪明钱包策略完整文档 |
 | `docs/polymarket-trading-bot-plan.md` | 早期研究计划 |
 
 ## 开发指南

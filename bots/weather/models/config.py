@@ -97,47 +97,12 @@ DEFAULT_CITIES = [
 
 STRATEGY_DEFAULTS: dict[str, dict[str, float]] = {
     "gopfan2": {"yes_max": 0.15, "no_min": 0.45},
-    "laddering": {
-        "spread_degrees": 7.0,
-        "buckets_to_use": 6,
-        "min_price": 0.02,
-        "max_price": 0.15,
-        "edge_threshold": 0.08,
-        "kelly_fraction": 0.25,
-        "max_single_pct": 0.02,
-        "max_ladder_cost": 0.90,
-    },
-    "tail_no_barbell": {
-        "tail_no_threshold": 0.85,
-        "tail_yes_threshold": 0.12,
-        "tail_no_alloc": 0.70,
-        "tail_yes_alloc": 0.30,
-        "min_edge_tail_no": 0.03,
-        "min_edge_tail_yes": 0.05,
-        "kelly_fraction": 0.60,
-        "max_single_pct": 0.50,
-    },
     "forecast_arb": {
         "min_mispricing": 0.15,
         "min_model_prob": 0.05,
         "max_market_price": 0.30,
-        "kelly_fraction": 0.80,
-        "max_single_pct": 0.60,
-    },
-    "resolution_delay": {
-        "min_confidence": 0.80,
-        "max_hours_before_resolution": 12.0,
-        "min_price_gap": 0.10,
-        "kelly_fraction": 0.80,
-        "max_single_pct": 0.60,
-    },
-    "near_certain_bond": {
-        "min_yes_price": 0.95,
-        "max_yes_price": 0.99,
-        "min_model_prob": 0.98,
-        "kelly_fraction": 0.50,
-        "max_position_usd": 5.0,
-        "max_per_event": 3,
+        "kelly_fraction": 0.25,
+        "max_single_pct": 0.02,
     },
 }
 
