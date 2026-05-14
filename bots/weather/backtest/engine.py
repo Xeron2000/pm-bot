@@ -431,7 +431,7 @@ class BacktestEngine:
                 question=mkt.question,
                 temp_low=parsed.temp_low_c,
                 temp_high=parsed.temp_high_c,
-                temp_unit=parsed.temp_unit,
+                temp_unit="C",  # Already converted to Celsius by parse_bucket
                 yes_price=yes_price,
                 no_price=1.0 - yes_price,
                 volume=1000.0,
