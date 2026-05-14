@@ -350,3 +350,36 @@ Fixed memory leak: httpx.AsyncClient was created every 300s cycle, accumulating 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 27: Lazy-load numpy, save ~36MB
+
+**Date**: 2026-05-14
+**Task**: Lazy-load numpy, save ~36MB
+**Branch**: `main`
+
+### Summary
+
+Made numpy lazy in weather.py and emos.py — not loaded at daemon startup. RSS: 111MB → 75MB. Added MALLOC_TRIM_THRESHOLD_=0.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `08c59f2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
