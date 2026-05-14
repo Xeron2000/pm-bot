@@ -383,3 +383,36 @@ Made numpy lazy in weather.py and emos.py — not loaded at daemon startup. RSS:
 ### Next Steps
 
 - None - task complete
+
+
+## Session 28: Backtest diagnosis: 0% win rate root cause
+
+**Date**: 2026-05-14
+**Task**: Backtest diagnosis: 0% win rate root cause
+**Branch**: `main`
+
+### Summary
+
+Diagnosed backtest 0% win rate: (1) fixed triple unit-conversion bug in engine.py, (2) identified raw ensemble counting as too noisy for 2°F buckets — 31 members produce diffuse probability, model overestimates tail buckets. EMOS calibration needed.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d0b651a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
