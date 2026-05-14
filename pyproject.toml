@@ -36,6 +36,7 @@ include = ["bots*", "shared*", "pm_bot*"]
 
 [project.scripts]
 pm-bot = "bots.weather.cli.app:app"
+pm-bot-v2 = "bots.weather.cli.app_v2:app"
 
 [tool.mypy]
 python_version = "3.12"
