@@ -74,6 +74,7 @@ class BacktestEngine:
         preloaded_events: list | None = None,
         spread_pct: float = 0.0,
         synthetic_only: bool = False,
+        emos_calibrators: dict | None = None,
     ) -> None:
         self.strategies = strategies
         self.bankroll = bankroll
@@ -89,6 +90,7 @@ class BacktestEngine:
         self.seed = seed
         self.spread_pct = spread_pct
         self.synthetic_only = synthetic_only
+        self.emos_calibrators = emos_calibrators or {}
         self._preloaded_fetcher = preloaded_fetcher
         self._preloaded_events = preloaded_events
         if fill_model is not None:
@@ -138,6 +140,10 @@ class BacktestEngine:
 
                         event = self._build_synthetic_event(city, date_str, forecast)
                         kwargs: dict = {"forecast": forecast, "bankroll": current_bankroll}
+
+                        # Pass EMOS calibrator if available
+                        if city in self.emos_calibrators:
+                            kwargs["emos_calibrator"] = self.emos_calibrators[city]
 
                         if obs_temp is not None:
                             from pm_bot.core.observation import ObservedTemp
@@ -519,6 +525,10 @@ class BacktestEngine:
                         continue
 
                     kwargs: dict = {"forecast": forecast, "bankroll": current_bankroll}
+
+                    # Pass EMOS calibrator if available
+                    if ev.city in self.emos_calibrators:
+                        kwargs["emos_calibrator"] = self.emos_calibrators[ev.city]
 
                     resolved_temp = self._get_resolved_temp(ev)
                     if resolved_temp is not None:

@@ -146,6 +146,10 @@ async def _fetch_historical_ensemble(
 
     Uses the historical-forecast-api endpoint which provides
     forecasts as they were issued on that date.
+
+    Note: Historical forecast API only provides deterministic forecast,
+    not ensemble members. We estimate ensemble from deterministic +
+    typical model spread.
     """
     params = {
         "latitude": lat,
@@ -165,14 +169,22 @@ async def _fetch_historical_ensemble(
         data = resp.json()
 
         daily = data.get("daily", {})
-        members: list[float] = []
+        temps = daily.get("temperature_2m_max", [])
 
-        for key, values in daily.items():
-            if key.startswith("temperature_2m_max_member"):
-                if values and isinstance(values[0], (int, float)):
-                    members.append(float(values[0]))
+        if not temps or temps[0] is None:
+            return None
 
-        return members if members else None
+        # Get deterministic forecast
+        det_temp = float(temps[0])
+
+        # Generate synthetic ensemble from deterministic + typical spread
+        # GFS typical spread is ~2-3°C for day 1-2 forecasts
+        import numpy as np
+        np.random.seed(hash(date) % 2**32)
+        spread = 2.5  # Typical GFS spread
+        ensemble = [det_temp + np.random.normal(0, spread) for _ in range(31)]
+
+        return ensemble
 
     except httpx.HTTPError as e:
         log.debug("historical_ensemble_failed", date=date, error=str(e))
