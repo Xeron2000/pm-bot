@@ -89,6 +89,21 @@ if mispricing >= 0.15 and b.yes_price <= 0.30:
 | near_certain_bond | 2026-05-14 | edge 太薄，kelly=0.50 |
 | smart_wallet bot | 2026-05-14 | 无交易执行，从未实盘 |
 
+### 已删除模块 (2026-05-14 cleanup)
+
+| 模块 | 行数 | 删除原因 |
+|------|------|----------|
+| core/aggregation.py | 180 | BMA 加权共识概率，无调用方 |
+| core/station_bias.py | 140 | 站点偏差学习，未集成到交易流程 |
+| core/city_variance.py | 375 | 城市方差过滤，过度设计 |
+| core/sources/ | 180 | NWS/METAR 重复实现 |
+| backtest/monte_carlo.py | 364 | 假随机数模拟，非真实回测 |
+| backtest/snowball_metrics.py | 265 | 心理安慰指标（$100→$10K 里程碑） |
+| run_snowball.py | 190 | 演示脚本，合成数据 |
+| models/forecast.py | 45 | ConsensusForecast，未使用 |
+| shared/ | 88 | 与 core/polymarket.py 重复 |
+| tests/ | 10,465 | 47 个文件，0 通过 |
+
 ---
 
 ## 关键参数
@@ -103,7 +118,7 @@ if mispricing >= 0.15 and b.yes_price <= 0.30:
 | min_edge (gopfan2) | 0.08 | 最低 8% edge |
 | min_mispricing (forecast_arb) | 0.15 | 最低 15% mispricing |
 | max_market_price (forecast_arb) | 0.30 | 最高市场价 |
-| WARMUP_DAYS | 30 | Station bias EMA warmup |
+| WARMUP_DAYS | 30 | Station bias EMA warmup (module deleted) |
 | GEFS members | 31 | GFS 集合预报成员数 |
 
 ---
