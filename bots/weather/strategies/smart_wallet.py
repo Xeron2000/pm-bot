@@ -52,6 +52,11 @@ class SmartWalletStrategy:
     max_trade_age_min: float = 30.0  # Only copy trades < 30min old
     min_trade_size: float = 5.0  # Ignore tiny trades
 
+    # Price filters (based on backtest analysis)
+    min_price: float = 0.30  # Don't copy tail buys (<$0.30)
+    max_price: float = 0.70  # Don't copy high-price trades (>$0.70)
+    max_slippage: float = 0.05  # 5% max slippage
+
     # Risk
     max_positions_per_wallet: int = 3  # Max positions from same wallet
     cooldown_min: float = 30.0  # Don't re-enter same market within 30min
@@ -84,6 +89,15 @@ class SmartWalletStrategy:
             if signal.confidence < self.min_confidence:
                 continue
 
+            # Filter by price (key insight from backtest)
+            price = signal.trade.price
+            if price < self.min_price:
+                log.debug("skip_tail_buy", price=price, min=self.min_price)
+                continue
+            if price > self.max_price:
+                log.debug("skip_high_price", price=price, max=self.max_price)
+                continue
+
             # Filter by wallet P&L
             # (This is already filtered in WalletTracker, but double-check)
 
@@ -92,17 +106,21 @@ class SmartWalletStrategy:
             if bucket is None:
                 continue
 
-            # Determine direction and price
+            # Determine direction
             if signal.trade.side == "BUY":
                 direction = "YES"
-                price = signal.trade.price
             else:
                 # For sells, we could buy NO or skip
                 # For now, skip sells (could be profit-taking)
                 continue
 
+            # Apply slippage
+            actual_price = price * (1 + self.max_slippage)
+            if actual_price > 0.99:
+                actual_price = 0.99
+
             # Compute position size
-            size = self._compute_size(signal, price, bankroll)
+            size = self._compute_size(signal, actual_price, bankroll)
             if size is None:
                 continue
 
@@ -113,7 +131,7 @@ class SmartWalletStrategy:
             rec = Recommendation(
                 bucket=bucket,
                 direction=direction,
-                price=price,
+                price=actual_price,
                 edge=edge,
                 size_usd=size,
                 strategy=self.name,
@@ -125,7 +143,8 @@ class SmartWalletStrategy:
                 "smart_wallet_rec",
                 wallet=signal.wallet_name,
                 direction=direction,
-                price=price,
+                price=actual_price,
+                raw_price=price,
                 size=size,
                 confidence=signal.confidence,
             )
@@ -198,6 +217,11 @@ class AdaptiveSmartWalletStrategy:
     max_trade_age_min: float = 45.0
     min_trade_size: float = 2.0
 
+    # Price filters (same as base strategy)
+    min_price: float = 0.30
+    max_price: float = 0.70
+    max_slippage: float = 0.05
+
     # Adaptive parameters
     hot_wallet_boost: float = 1.5  # 50% more for hot wallets
     cold_wallet_reduce: float = 0.5  # 50% less for cold wallets
@@ -232,6 +256,13 @@ class AdaptiveSmartWalletStrategy:
                 if signal.confidence < self.min_confidence:
                     continue
 
+                # Price filters (based on backtest analysis)
+                price = signal.trade.price
+                if price < self.min_price:
+                    continue
+                if price > self.max_price:
+                    continue
+
                 bucket = self._find_matching_bucket(event, signal)
                 if bucket is None:
                     continue
@@ -239,19 +270,23 @@ class AdaptiveSmartWalletStrategy:
                 if signal.trade.side != "BUY":
                     continue
 
-                price = signal.trade.price
+                # Apply slippage
+                actual_price = price * (1 + self.max_slippage)
+                if actual_price > 0.99:
+                    actual_price = 0.99
+
                 size = self._compute_adaptive_size(
-                    signal, price, bankroll, perf_mult
+                    signal, actual_price, bankroll, perf_mult
                 )
                 if size is None:
                     continue
 
-                edge = signal.confidence * 0.15
+                edge = signal.confidence * 0.15 * perf_mult
 
                 rec = Recommendation(
                     bucket=bucket,
                     direction="YES",
-                    price=price,
+                    price=actual_price,
                     edge=edge,
                     size_usd=size,
                     strategy=self.name,
