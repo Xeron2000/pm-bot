@@ -2,67 +2,91 @@
 scope: backend
 ---
 
-# PM-Bot 资金管理规范
+# PM-Bot $100 小资金激进模式
 
 ## 概述
 
-保守资金管理模式，适用于 $100-$2000 小资金 Polymarket 天气交易。
+$100 小资金需要激进仓位管理，否则无法产生有意义收益。
+核心区别：激进仓位 + 高置信度 edge = 可控风险。
 
-## 风险态度
-
-- **风险等级**: 低-中（保守 Kelly）
-- **目标**: 长期正期望值，不追求快速翻倍
-- **破产概率目标**: <5%
-
-## 核心策略 (2 个)
-
-### 1. gopfan2 (尾部YES彩票)
-
-- **逻辑**: 买低价YES尾部桶 ($0.01-$0.15)，需要模型验证 edge ≥ 8%
-- **胜率**: ~3-5%
-- **赔率**: 1:6 到 1:99
-- **Kelly**: 0.25 (quarter Kelly)
-- **Max position**: $2
-
-### 2. forecast_arb (预报套利)
-
-- **逻辑**: 模型与市场价格差距 >15% 时建仓
-- **Kelly**: 0.25 (quarter Kelly)
-- **Max position**: $2
-- **Max per event**: 3 recommendations
-
-## 仓位管理
+## 资金规则
 
 | 参数 | 值 | 说明 |
 |------|-----|------|
-| kelly_fraction | 0.25 | Quarter Kelly |
-| max_single_pct | 0.02 | 单笔最大 2% bankroll |
-| max_position_usd | $2 | 单笔上限 |
-| max_total_pct | 70% | 总暴露（30% 现金储备） |
+| kelly_fraction | 0.50 | Half Kelly |
+| max_single_pct | 0.15 | 单笔最大 15% = $15 |
+| max_position_usd | $15 | 单笔上限 |
+| max_total_pct | 0.80 | 最多 80% 暴露 = $80 |
+| cash_reserve_pct | 0.20 | 至少 $20 现金 |
+| stop_loss_pct | 0.50 | 亏损 $50 后降为半仓 |
 
-## 费用模型 (Polymarket Weather)
+### 破产概率分析
 
-| 价格区间 | Taker费率 |
-|----------|----------|
-| 5¢ (tail) | 0.24% |
-| 10¢ | 0.45% |
-| 20¢ | 0.80% |
-| 50¢ | 2.50% |
+假设 8% edge (model_prob=0.12, price=$0.04)：
+- Half Kelly: f* = 0.5 × 8%/96% ≈ 4.2%
+- $15 下注 = 15% bankroll > kelly 建议的 4.2%
+- 但 max_single_pct=15% 是硬上限，实际 kelly 会小于此
 
-tail 桶费率极低，适合高频小额交易。
+风险缓释：
+- gopfan2 只在 edge ≥ 8% 时交易（model_prob 必须确认）
+- forecast_arb 只在 mispricing ≥ 15% 时交易
+- 赔率是 1:24 到 1:99（$0.01→$0.25-$1.00）
+- 连续亏损 6 次才亏 $90，概率 (0.95)^6 ≈ 74%
+
+## 策略参数
+
+### gopfan2
+
+```python
+kelly_fraction = 0.50
+max_single_pct = 0.15
+max_position_usd = 15.0
+edge_threshold = 0.08  # model_prob - price ≥ 8%
+yes_max = 0.15
+```
+
+### forecast_arb
+
+```python
+kelly_fraction = 0.50
+max_single_pct = 0.15
+max_position_usd = 15.0
+min_mispricing = 0.15  # model_prob - price ≥ 15%
+max_market_price = 0.30
+max_per_event = 3
+```
+
+## 止损机制
+
+```python
+if current_bankroll < initial_bankroll * 0.50:
+    # 亏损 50%，降为半仓
+    max_single_pct = 0.075
+    max_position_usd = 7.50
+    max_total_pct = 0.40
+```
+
+## 增长路径
+
+| 阶段 | Bankroll | 策略 |
+|------|----------|------|
+| 起步 | $100 | 激进模式，验证策略 |
+| 第一目标 | $300 | 保持激进 |
+| 第二目标 | $1000 | 降为 kelly=0.40, max_single=10% |
+| 成熟 | $2000+ | 降为 kelly=0.25, max_single=5% |
+
+## 前提条件（必须满足）
+
+1. **模型验证**: 用真实数据回测，确认 edge 存在
+2. **EMOS 校准**: 原始 ensemble 欠散 20-40%，必须校准
+3. **概率校准**: reliability diagram 确认 model_prob 准确
+4. **Edge 阈值**: 不低于 8% (gopfan2) / 15% (forecast_arb)
 
 ## 禁止行为
 
-- Kelly > 0.30 用于未校准模型
-- max_single_pct > 0.05
-- 使用已被证明负EV的策略
-- 不做回测就实盘
-- 用 mid price 做中部桶交易
-
-## 已删除的激进模式
-
-$100 Aggressive Mode（kelly=0.60-0.80, max_single_pct=0.50-0.60）已于 2026-05-14 删除。
-原因：破产概率过高，多个策略本身也已删除。
+- 用未校准模型直接交易（edge 可能是假的）
+- 不验证就实盘
+- 赌没有 edge 的市场
 
 ---
 

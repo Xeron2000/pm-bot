@@ -96,13 +96,20 @@ DEFAULT_CITIES = [
 ]
 
 STRATEGY_DEFAULTS: dict[str, dict[str, float]] = {
-    "gopfan2": {"yes_max": 0.15, "no_min": 0.45},
+    "gopfan2": {
+        "yes_max": 0.15,
+        "no_min": 0.45,
+        "kelly_fraction": 0.50,
+        "max_single_pct": 0.15,
+        "max_position_usd": 15.0,
+    },
     "forecast_arb": {
         "min_mispricing": 0.15,
         "min_model_prob": 0.05,
         "max_market_price": 0.30,
-        "kelly_fraction": 0.25,
-        "max_single_pct": 0.02,
+        "kelly_fraction": 0.50,
+        "max_single_pct": 0.15,
+        "max_position_usd": 15.0,
     },
 }
 
