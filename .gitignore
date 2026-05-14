@@ -16,3 +16,4 @@ config.toml
 
 # Legacy package structure
 pm_bot/
+.ace-tool/

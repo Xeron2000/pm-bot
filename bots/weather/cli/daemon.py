@@ -54,6 +54,8 @@ class TradingDaemon:
         self.config = config
         self.dry_run = dry_run
         self.db = TradeDB()
+        # Reuse single httpx client to avoid memory leak (SSL context + connection pool)
+        self._http_client = httpx.AsyncClient(timeout=30.0)
         sizing = get_sizing(config)
         risk_cfg = config.get("risk", {})
         daemon_cfg = config.get("daemon", {})
@@ -137,9 +139,7 @@ class TradingDaemon:
         # Load EMOS calibrators
         self.emos_calibrators: dict[str, 'EMOSCalibrator'] = {}
         self._load_emos_calibrators()
-
-        # Initialize smart wallet tracker
-        self._init_smart_wallet_tracker()
+        self.smart_wallet_tracker = None  # deleted module
 
     def _load_emos_calibrators(self) -> None:
         """Load trained EMOS calibrators from disk."""
@@ -213,6 +213,7 @@ class TradingDaemon:
                     await self._trade_cycle()
                 except Exception as e:
                     log.error("cycle_failed", error=str(e))
+                import gc; gc.collect()
                 self.cycle_count += 1
                 self._write_heartbeat()
 
@@ -229,120 +230,113 @@ class TradingDaemon:
 
     async def _trade_cycle(self) -> None:
         self.trades_this_cycle = 0
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            # Run smart wallet monitoring in parallel
-            if hasattr(self, 'smart_wallet_tracker') and self.smart_wallet_tracker:
-                await self._monitor_smart_wallets(client)
+        client = self._http_client
 
-            events = await fetch_weather_events(client)
-            events = [e for e in events if e.city in self.city_set]
+        events = await fetch_weather_events(client)
+        events = [e for e in events if e.city in self.city_set]
 
-            if not events:
-                log.debug("no_events_found")
-                return
+        if not events:
+            log.debug("no_events_found")
+            return
 
-            self._sync_dynamic_risk_limits()
-            await self._apply_paper_stop_loss(events)
-            self._sync_dynamic_risk_limits()
+        self._sync_dynamic_risk_limits()
+        await self._apply_paper_stop_loss(events)
+        self._sync_dynamic_risk_limits()
 
-            forecasts: dict[str, ForecastResult] = {}
-            obs_map: dict[str, Any] = {}
-            for ev in events:
-                fc = await fetch_forecast(client, ev.city, ev.date)
-                if fc:
-                    forecasts[ev.city] = fc
+        forecasts: dict[str, ForecastResult] = {}
+        obs_map: dict[str, Any] = {}
+        for ev in events:
+            fc = await fetch_forecast(client, ev.city, ev.date)
+            if fc:
+                forecasts[ev.city] = fc
 
-            for city in {ev.city for ev in events}:
-                obs = await fetch_observation(client, city)
-                if obs:
-                    obs_map[city] = obs
-                    if obs.is_past_cutoff:
-                        log.info("observation_locked", city=city, observed_c=obs.observed_c)
+        for city in {ev.city for ev in events}:
+            obs = await fetch_observation(client, city)
+            if obs:
+                obs_map[city] = obs
+                if obs.is_past_cutoff:
+                    log.info("observation_locked", city=city, observed_c=obs.observed_c)
 
-            all_recs: list[Recommendation] = []
-            for ev in events:
-                for strat_name, strat in self.strategies.items():
-                    kwargs: dict[str, Any] = {}
-                    for k, v in STRATEGY_DEFAULTS.get(strat_name, {}).items():
-                        kwargs[k] = v
-                    if ev.city in forecasts:
-                        kwargs["forecast"] = forecasts[ev.city]
-                    if strat_name == "ensemble_spread":
-                        pass  # strategy removed
+        all_recs: list[Recommendation] = []
+        for ev in events:
+            for strat_name, strat in self.strategies.items():
+                kwargs: dict[str, Any] = {}
+                for k, v in STRATEGY_DEFAULTS.get(strat_name, {}).items():
+                    kwargs[k] = v
+                if ev.city in forecasts:
+                    kwargs["forecast"] = forecasts[ev.city]
+                if ev.city in self.emos_calibrators:
+                    kwargs["emos_calibrator"] = self.emos_calibrators[ev.city]
 
-                    # Pass EMOS calibrator if strategy supports it
-                    if ev.city in self.emos_calibrators:
-                        kwargs["emos_calibrator"] = self.emos_calibrators[ev.city]
+                recs = strat.run(ev, **kwargs)
 
-                    recs = strat.run(ev, **kwargs)
+                if ev.city in obs_map:
+                    recs = filter_recommendations(recs, obs_map[ev.city])
 
-                    if ev.city in obs_map:
-                        recs = filter_recommendations(recs, obs_map[ev.city])
+                # Apply staged entry scaling based on time to resolution
+                recs = apply_staged_entry_for_event(recs, ev.date)
 
-                    # Apply staged entry scaling based on time to resolution
-                    recs = apply_staged_entry_for_event(recs, ev.date)
+                for rec in recs:
+                    if rec.edge < 0.05:
+                        continue
+                    dup_db = self.paper if self.dry_run else self.db
+                    if dup_db is not None and dup_db.check_duplicate_order(rec.bucket.market_id, rec.direction):
+                        continue
 
-                    for rec in recs:
-                        if rec.edge < 0.05:
-                            continue
-                        dup_db = self.paper if self.dry_run else self.db
-                        if dup_db is not None and dup_db.check_duplicate_order(rec.bucket.market_id, rec.direction):
-                            continue
+                    risk_result = self.risk_manager.full_check(
+                        city=rec.city,
+                        amount_usd=self.max_single,
+                        yes_price=rec.bucket.yes_price,
+                        no_price=rec.bucket.no_price,
+                        hours_to_resolution=_estimate_hours_to_resolution(ev.date),
+                    )
+                    if not risk_result.allowed:
+                        log.info("risk_blocked", reason=risk_result.reason, city=rec.city)
+                        # PRD 3E/3F: Send circuit breaker / consecutive loss notification
+                        if risk_result.circuit_breaker_level > 0:
+                            await self.send_circuit_breaker_alert(risk_result)
+                        elif "Consecutive" in risk_result.reason:
+                            await self._send_notification(
+                                f"⚠️ {risk_result.reason}\nBankroll: ${self.bankroll:.2f}",
+                                "consecutive_loss",
+                            )
+                        continue
 
-                        risk_result = self.risk_manager.full_check(
-                            city=rec.city,
-                            amount_usd=self.max_single,
-                            yes_price=rec.bucket.yes_price,
-                            no_price=rec.bucket.no_price,
-                            hours_to_resolution=_estimate_hours_to_resolution(ev.date),
-                        )
-                        if not risk_result.allowed:
-                            log.info("risk_blocked", reason=risk_result.reason, city=rec.city)
-                            # PRD 3E/3F: Send circuit breaker / consecutive loss notification
-                            if risk_result.circuit_breaker_level > 0:
-                                await self.send_circuit_breaker_alert(risk_result)
-                            elif "Consecutive" in risk_result.reason:
-                                await self._send_notification(
-                                    f"⚠️ {risk_result.reason}\nBankroll: ${self.bankroll:.2f}",
-                                    "consecutive_loss",
-                                )
-                            continue
+                    effective_kelly = self.kelly_fraction_val * risk_result.kelly_adjustment
+                    if self.dry_run and self.paper is not None:
+                        daily_spent = self.paper.daily_spent
+                        city_spent = self.paper.get_city_spent(rec.city)
+                        total_exposure = self.paper.get_total_exposure()
+                        sizing_bankroll = self.paper.bankroll
+                    else:
+                        daily_spent = self.db.get_daily_spent()
+                        city_spent = self.db.get_city_spent(rec.city)
+                        total_exposure = self.db.get_total_exposure()
+                        sizing_bankroll = self.bankroll
 
-                        effective_kelly = self.kelly_fraction_val * risk_result.kelly_adjustment
-                        if self.dry_run and self.paper is not None:
-                            daily_spent = self.paper.daily_spent
-                            city_spent = self.paper.get_city_spent(rec.city)
-                            total_exposure = self.paper.get_total_exposure()
-                            sizing_bankroll = self.paper.bankroll
-                        else:
-                            daily_spent = self.db.get_daily_spent()
-                            city_spent = self.db.get_city_spent(rec.city)
-                            total_exposure = self.db.get_total_exposure()
-                            sizing_bankroll = self.bankroll
+                    sized = compute_kelly_for_recommendation(
+                        rec,
+                        bankroll=sizing_bankroll,
+                        kelly_multiplier=effective_kelly,
+                        max_single=self.max_single,
+                        max_daily=self.max_daily,
+                        daily_spent=daily_spent,
+                        max_per_city=self.max_per_city,
+                        city_spent=city_spent,
+                        max_total_pct=self.max_total_pct,
+                        total_exposure=total_exposure,
+                    )
+                    if sized is not None:
+                        all_recs.append(sized)
 
-                        sized = compute_kelly_for_recommendation(
-                            rec,
-                            bankroll=sizing_bankroll,
-                            kelly_multiplier=effective_kelly,
-                            max_single=self.max_single,
-                            max_daily=self.max_daily,
-                            daily_spent=daily_spent,
-                            max_per_city=self.max_per_city,
-                            city_spent=city_spent,
-                            max_total_pct=self.max_total_pct,
-                            total_exposure=total_exposure,
-                        )
-                        if sized is not None:
-                            all_recs.append(sized)
+        all_recs.sort(key=lambda r: r.edge, reverse=True)
 
-            all_recs.sort(key=lambda r: r.edge, reverse=True)
+        for rec in all_recs:
+            if self.trades_this_cycle >= 10:
+                break
+            await self._execute_trade(rec)
 
-            for rec in all_recs:
-                if self.trades_this_cycle >= 10:
-                    break
-                await self._execute_trade(rec)
-
-            await self._auto_settle()
+        await self._auto_settle()
 
     def _sync_dynamic_risk_limits(self) -> None:
         if self.dry_run and self.paper is not None:
@@ -526,13 +520,13 @@ class TradingDaemon:
             if not open_trades:
                 return
 
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                settled_events = await fetch_weather_events(client, include_closed=True)
-                settled_map: dict[str, Any] = {}
-                for ev in settled_events:
-                    for b in ev.buckets:
-                        if b.market_id:
-                            settled_map[b.market_id] = ev
+            client = self._http_client
+            settled_events = await fetch_weather_events(client, include_closed=True)
+            settled_map: dict[str, Any] = {}
+            for ev in settled_events:
+                for b in ev.buckets:
+                    if b.market_id:
+                        settled_map[b.market_id] = ev
 
             total_settled = 0
             total_pnl = 0.0
@@ -762,6 +756,7 @@ class TradingDaemon:
 
         await self._send_notification("🔴 PM-Bot daemon stopped", "daemon_stop")
 
+        await self._http_client.aclose()
         self._remove_pid()
         self.db.close()
         log.info("graceful_shutdown_complete")
