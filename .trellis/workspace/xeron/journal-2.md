@@ -218,3 +218,36 @@ Full project audit based on web research. Deleted 4 unprofitable strategies (tai
 ### Next Steps
 
 - None - task complete
+
+
+## Session 23: Research real backtest data pipeline, update specs
+
+**Date**: 2026-05-14
+**Task**: Research real backtest data pipeline, update specs
+**Branch**: `main`
+
+### Summary
+
+Researched Polymarket CLOB prices-history API, Open-Meteo historical-forecast-api, EMOS calibration best practices. Updated trading-config spec with full data pipeline architecture and open-source references (polymarket-tmax-lab, PolyWeather, IMPROVER). Updated 100-dollar spec to conservative mode.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ca86b25` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
