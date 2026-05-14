@@ -43,6 +43,18 @@ SMART_WALLETS = {
         "style": "mixed",
         "description": "Mixed weather market strategy",
     },
+    "0xe5c8026239919339b988fdb150a7ef4ea196d3e7": {
+        "name": "bama124",
+        "pnl": 87_000,
+        "style": "mixed",
+        "description": "Consistent weather trader",
+    },
+    "0x0f37cb80dee49d55b5f6d9e595d52591d6371410": {
+        "name": "Hans323",
+        "pnl": 77_000,
+        "style": "barbell",
+        "description": "German law student, tail buys, $1M biggest win",
+    },
 }
 
 # Cache for market-to-event mapping

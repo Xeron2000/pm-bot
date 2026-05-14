@@ -237,7 +237,7 @@ class TradeDB:
         existing = self.get_daily_state(date)
         if existing and existing.get("id"):
             sets = ", ".join(f"{k} = ?" for k in kwargs)
-            vals = list(kwargs.values()) + [date]
+            vals = list(kwargs.values()) + [_utc_now(), date]
             conn.execute(f"UPDATE daily_state SET {sets}, updated_at = ? WHERE date = ?", vals)
         else:
             cols = ["date"] + list(kwargs.keys())
