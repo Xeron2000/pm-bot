@@ -317,3 +317,36 @@ Removed 12,595 lines of dead code across 70 files: aggregation, station_bias, ci
 ### Next Steps
 
 - None - task complete
+
+
+## Session 26: Fix daemon memory leak (httpx + gc)
+
+**Date**: 2026-05-14
+**Task**: Fix daemon memory leak (httpx + gc)
+**Branch**: `main`
+
+### Summary
+
+Fixed memory leak: httpx.AsyncClient was created every 300s cycle, accumulating SSL contexts+connection pools (334MB RSS + 1.5GB swap). Reused single client, added gc.collect(), removed dead smart_wallet and ensemble_spread references.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `eb2386c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
