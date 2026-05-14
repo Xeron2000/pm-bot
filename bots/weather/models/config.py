@@ -127,6 +127,19 @@ STRATEGY_DEFAULTS: dict[str, dict[str, float]] = {
         "max_single_pct": 0.02,
         "max_position_usd": 2.0,
     },
+    "barbell": {
+        "edge_threshold": 0.08,
+        "kelly_fraction": 0.15,
+        "max_single_pct": 0.02,
+        "max_position_usd": 5.0,
+        "tail_ratio": 0.80,
+    },
+    "adaptive_barbell": {
+        "edge_threshold": 0.08,
+        "kelly_fraction": 0.15,
+        "max_single_pct": 0.02,
+        "max_position_usd": 5.0,
+    },
 }
 
 CACHE_TTL: dict[str, int] = {

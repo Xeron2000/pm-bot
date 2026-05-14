@@ -153,11 +153,14 @@ def get_all_strategies() -> dict[str, Strategy]:
     - forecast_arb: model vs market mispricing exploit
     - emos_gopfan2: EMOS-enhanced gopfan2 (model-validated tails)
     - emos_forecast_arb: EMOS-enhanced forecast arb (calibrated probabilities)
+    - barbell: tail buys + high-conviction central bets (ColdMath style)
+    - adaptive_barbell: barbell with dynamic ratio adjustment
     """
     global _all_strategies
     if _all_strategies is None:
         from pm_bot.strategies.forecast_arb import ForecastArbStrategy
         from pm_bot.strategies.emos_strategies import EMOSGopfan2Strategy, EMOSForecastArbStrategy
+        from pm_bot.strategies.barbell import BarbellStrategy, AdaptiveBarbellStrategy
         from pm_bot.models.config import STRATEGY_DEFAULTS
 
         _all_strategies = {
@@ -165,6 +168,8 @@ def get_all_strategies() -> dict[str, Strategy]:
             "forecast_arb": ForecastArbStrategy(**STRATEGY_DEFAULTS.get("forecast_arb", {})),
             "emos_gopfan2": EMOSGopfan2Strategy(**STRATEGY_DEFAULTS.get("emos_gopfan2", {})),
             "emos_forecast_arb": EMOSForecastArbStrategy(**STRATEGY_DEFAULTS.get("emos_forecast_arb", {})),
+            "barbell": BarbellStrategy(**STRATEGY_DEFAULTS.get("barbell", {})),
+            "adaptive_barbell": AdaptiveBarbellStrategy(**STRATEGY_DEFAULTS.get("adaptive_barbell", {})),
         }
     return _all_strategies
 

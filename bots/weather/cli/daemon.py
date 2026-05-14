@@ -134,6 +134,31 @@ class TradingDaemon:
         self.cycle_count = 0
         self.trades_this_cycle = 0
 
+        # Load EMOS calibrators
+        self.emos_calibrators: dict[str, 'EMOSCalibrator'] = {}
+        self._load_emos_calibrators()
+
+    def _load_emos_calibrators(self) -> None:
+        """Load trained EMOS calibrators from disk."""
+        from pathlib import Path
+        from pm_bot.core.emos import EMOSCalibrator
+
+        emos_dir = Path("data/emos")
+        if not emos_dir.exists():
+            return
+
+        for path in emos_dir.glob("emos_*.json"):
+            try:
+                calibrator = EMOSCalibrator.load(path)
+                if calibrator.city:
+                    self.emos_calibrators[calibrator.city] = calibrator
+                    log.info("loaded_emos", city=calibrator.city)
+            except Exception as e:
+                log.warning("emos_load_failed", path=str(path), error=str(e))
+
+        if self.emos_calibrators:
+            log.info("emos_calibrators_loaded", n=len(self.emos_calibrators))
+
     async def run(self) -> None:
         loop = asyncio.get_running_loop()
         loop.add_signal_handler(signal.SIGTERM, self._handle_sigterm)
@@ -216,6 +241,10 @@ class TradingDaemon:
                         kwargs["forecast"] = forecasts[ev.city]
                     if strat_name == "ensemble_spread":
                         pass  # strategy removed
+
+                    # Pass EMOS calibrator if strategy supports it
+                    if ev.city in self.emos_calibrators:
+                        kwargs["emos_calibrator"] = self.emos_calibrators[ev.city]
 
                     recs = strat.run(ev, **kwargs)
 
