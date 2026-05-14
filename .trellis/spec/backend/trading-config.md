@@ -1,68 +1,93 @@
-# Trading & Backtest Configuration
+---
+scope: backend
+---
+
+# PM-Bot Backtest Configuration
 
 > Polymarket 天气市场交易策略、踩坑记录、真实可行性分析。
 
 ---
 
-## ⚠️ 核心教训：回测陷阱
+## ⚠️ 核心教训
 
-### 踩坑1：P&L 公式方向错误
+### 教训1：危险 Kelly 参数 (2026-05-14)
 
-**症状**：回测显示 +57,000% 回报，NO 方向交易盈亏反转。
-
-**原因**：NO 方向 P&L 公式写反了：
+STRATEGY_DEFAULTS 曾包含 kelly=0.80, max_single_pct=0.60，导致单笔可下 60% bankroll。
 
 ```python
-# ❌ 错误 (旧代码)
-raw_pnl = size * effective_price if not hit else -size * (1.0 - effective_price)
+# ❌ 自杀参数（已修复）
+"forecast_arb": {"kelly_fraction": 0.80, "max_single_pct": 0.60}
+"resolution_delay": {"kelly_fraction": 0.80, "max_single_pct": 0.60}
 
-# ✅ 正确 (已修复)
+# ✅ 安全参数（当前）
+"forecast_arb": {"kelly_fraction": 0.25, "max_single_pct": 0.02}
+"gopfan2": {"kelly_fraction": 0.25, "max_single_pct": 0.02}
+```
+
+**规则**: 未校准模型的 kelly_fraction 不得超过 0.30。max_single_pct 不得超过 0.05。
+
+### 教训2：P&L 公式方向错误
+
+NO 方向 P&L 公式曾写反，回测显示 +57,000% 回报。
+
+```python
+# ❌ 错误
+raw_pnl = size * effective_price if not hit else -size * (1.0 - effective_price)
+# ✅ 正确
 raw_pnl = size * (1.0 - effective_price) if not hit else -size * effective_price
 ```
 
-### 踩坑2：用 mid price 成交
+### 教训3：用 mid price 成交
 
-Polymarket 订单簿实际是 bid=$0.010/ask=$0.990，mid=$0.500。只有尾部桶 (mid < $0.15 或 > $0.85) 的价格是准确的。中部桶回测结果完全不可信。
+Polymarket 订单簿实际是 bid=$0.010/ask=$0.990，mid=$0.500。只有尾部桶 (mid < $0.15) 的价格是准确的。中部桶回测结果完全不可信。
 
-### 踩坑3：中部桶交易全部负EV
+### 教训4：中部桶交易全部负EV
 
-买 YES 付 $0.990 ask，赢了赚 $0.010，输了亏 $0.990。风险回报比 99:1，需要 >99% 胜率才能 break even。
+买 YES 付 $0.990 ask，赢了赚 $0.010，输了亏 $0.990。风险回报比 99:1。
+
+### 教训5：edge 定义必须一致
+
+所有策略 edge = `model_prob - market_price`。曾有策略用 `edge = 1.0 - yes_price`，导致 Kelly 重建 p_true = 1.0。
 
 ---
 
-## 当前策略：gopfan2 (尾部YES彩票)
+## 当前策略 (2 个)
 
-### 机制
-
-买极端温度桶的 YES ($0.01/份)，赌极端温度会发生。
-
-### 条件
+### gopfan2 — 尾部YES彩票
 
 ```python
-# 在 strategies/base.py Gopfan2Strategy.run()
-if b.yes_price <= yes_max:  # 默认 0.15
+# strategies/base.py Gopfan2Strategy.run()
+if b.yes_price <= 0.15:
     model_prob = bucket_probability_numpy(forecast, b.temp_low_c, b.temp_high_c)
-    if model_prob > b.yes_price + 0.02:  # edge > 2%
-        edge = model_prob - b.yes_price
+    edge = model_prob - b.yes_price
+    if edge >= 0.08:  # 8% minimum edge
+        # quarter Kelly sizing, max $2 per position
 ```
 
-### 为什么可行
+### forecast_arb — 模型 vs 市场定价偏差
 
-- 极端温度发生概率 3-5% → YES 胜率 3-5%
-- 赢了赚 $0.99/份，输了亏 $0.01/份
-- EV(5%) = 0.05 × $0.99 - 0.95 × $0.01 = **+$0.04/份**
-- 有人愿意 $0.01 卖出 YES（因为 95% 概率变废纸）
-- 成交率可能 20-30%
+```python
+# strategies/forecast_arb.py ForecastArbStrategy.run()
+model_prob = bucket_probability_numpy(forecast, b.temp_low_c, b.temp_high_c)
+mispricing = model_prob - b.yes_price
+if mispricing >= 0.15 and b.yes_price <= 0.30:
+    # quarter Kelly sizing, max $2 per position, max 3 recs per event
+```
 
-### 已删除策略 (2026-05-07)
+### 已删除策略
 
-| 策略 | 删除原因 |
-|------|----------|
-| neg_risk_field_fade | 核心是尾部NO，live fill rate <1% |
-| neg_risk_sum | 核心是尾部NO，live fill rate <1% |
-| truncation_edge | 中部桶交易全部负EV |
-| ensemble_spread | 总P&L为负 |
-| resolution_div | 中部桶交易全部负EV |
+| 策略 | 删除日期 | 原因 |
+|------|----------|------|
+| neg_risk_field_fade | 2026-05-07 | live fill rate <1% |
+| neg_risk_sum | 2026-05-07 | live fill rate <1% |
+| truncation_edge | 2026-05-07 | 中部桶负EV |
+| ensemble_spread | 2026-05-07 | 总P&L为负 |
+| resolution_div | 2026-05-07 | 中部桶负EV |
+| laddering | 2026-05-14 | 无 NegRisk，kelly=0.60 |
+| tail_no_barbell | 2026-05-14 | 3% edge 太低，kelly=0.60 |
+| resolution_delay | 2026-05-14 | 最高风险，kelly=0.80 |
+| near_certain_bond | 2026-05-14 | edge 太薄，kelly=0.50 |
+| smart_wallet bot | 2026-05-14 | 无交易执行，从未实盘 |
 
 ---
 
@@ -70,33 +95,213 @@ if b.yes_price <= yes_max:  # 默认 0.15
 
 | 参数 | 当前值 | 说明 |
 |------|--------|------|
-| kelly_multiplier | 0.10 | 10% fractional Kelly，对未校准模型更安全 |
-| yes_max | 0.15 | 只交易 ≤$0.15 的尾部桶 |
-| min_edge | 0.08 | live 模式最低 8% edge |
-| max_single | $50 | 单笔上限 |
-| max_daily | $200 | 日上限 |
-| max_total_pct | 30% | 总暴露占 bankroll 比例 |
-| stop_loss | 可配置 | 建议 0.20 (20%) |
-| WARMUP_DAYS | 30 | Station bias EMA warmup 天数 |
+| kelly_fraction | 0.25 | Quarter Kelly |
+| max_single_pct | 0.02 | 单笔最大 2% bankroll |
+| max_position_usd | $2 | 单笔上限 |
+| max_total_pct | 70% | 总暴露（30% 现金储备） |
+| yes_max (gopfan2) | 0.15 | 只交易 ≤$0.15 的尾部桶 |
+| min_edge (gopfan2) | 0.08 | 最低 8% edge |
+| min_mispricing (forecast_arb) | 0.15 | 最低 15% mispricing |
+| max_market_price (forecast_arb) | 0.30 | 最高市场价 |
+| WARMUP_DAYS | 30 | Station bias EMA warmup |
 | GEFS members | 31 | GFS 集合预报成员数 |
-| RESOLVED_THRESHOLD | 0.90 | 判断市场 resolved 的 outcomePrices 阈值 |
+
+---
+
+## 真实回测数据接入 (2026-05-14 研究)
+
+### 数据源架构
+
+| 数据 | 来源 | API | 认证 |
+|------|------|-----|------|
+| 市场发现 | Gamma API | `gamma-api.polymarket.com/events` | 无需 |
+| 历史价格 | CLOB API | `clob.polymarket.com/prices-history` | 无需 |
+| 实时订单簿 | CLOB API | `clob.polymarket.com/book` | 无需 |
+| 天气预报 (当前) | Open-Meteo | `api.open-meteo.com/v1/forecast` | 无需 |
+| 天气预报 (历史) | Open-Meteo | `historical-forecast-api.open-meteo.com` | 无需 |
+| 天气预报 (集合) | Open-Meteo | `ensemble-api.open-meteo.com/v1/ensemble` | 无需 |
+| 天气观测 (真实) | Open-Meteo | `archive-api.open-meteo.com/v1/archive` | 无需 |
+
+### Polymarket CLOB 历史价格 API
+
+```python
+# GET /prices-history
+# 参数:
+#   market: condition_id (string, required)
+#   interval: "1h" | "6h" | "1d" | "1w" | "max"
+#   startTs: Unix timestamp (seconds)
+#   endTs: Unix timestamp (seconds)
+#   fidelity: 数据点数量
+# 返回: {"history": [{"t": 1697875200, "p": 0.18}, ...]}
+# 无需认证
+
+import httpx
+
+async def get_price_history(condition_id: str, interval: str = "1h") -> list[dict]:
+    url = "https://clob.polymarket.com/prices-history"
+    params = {"market": condition_id, "interval": interval}
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(url, params=params)
+        return resp.json()["history"]
+```
+
+### 批量历史价格 API
+
+```python
+# POST /batch-prices-history
+# 一次获取多个市场的历史价格
+# body: {"markets": ["condition_id_1", "condition_id_2"], "interval": "1d"}
+```
+
+### Open-Meteo 历史预报 API (关键!)
+
+这是回测的核心：获取**过去某一天发出的预报**，而非事后观测。
+
+```python
+# 历史预报 API — 获取过去某天模型实际发出的预报
+# 与 archive API 不同：archive 是观测值，historical-forecast 是预报值
+# 来源: open-meteo.com/en/docs/historical-forecast-api
+# 数据从 2022 年至今
+
+# 获取 2025-06-15 发出的 NYC 温度预报（含多个 lead time）
+url = "https://historical-forecast-api.open-meteo.com/v1/forecast"
+params = {
+    "latitude": 40.7772,
+    "longitude": -73.8726,
+    "hourly": "temperature_2m",
+    "start_date": "2025-06-15",
+    "end_date": "2025-06-16",
+    "models": "gfs_seamless",  # 或 ecmwf_ifs025, icon_seamless
+    "timezone": "America/New_York",
+}
+```
+
+### Open-Meteo 历史观测 API (真实值)
+
+```python
+# Archive API — 获取实际观测值（用于验证预报准确性）
+# 来源: archive-api.open-meteo.com/v1/archive
+# 数据从 1940 年至今（2017+ 使用 9km 分辨率）
+
+url = "https://archive-api.open-meteo.com/v1/archive"
+params = {
+    "latitude": 40.7772,
+    "longitude": -73.8726,
+    "start_date": "2025-06-15",
+    "end_date": "2025-06-15",
+    "daily": "temperature_2m_max",  # 日最高温
+    "timezone": "America/New_York",
+    "models": "era5",  # ERA5 再分析（最准确的观测值）
+}
+```
+
+### 集合预报 API (概率校准用)
+
+```python
+# Ensemble API — 获取 31 个集合成员（用于概率校准）
+# 注意: 历史 ensemble 数据只保留 ~24h（免费版）
+# 付费版 open-meteo.com/pricing 保留更长历史
+
+url = "https://ensemble-api.open-meteo.com/v1/ensemble"
+params = {
+    "latitude": 40.7772,
+    "longitude": -73.8726,
+    "hourly": "temperature_2m",
+    "models": "gfs_seamless",  # 31 members
+    "past_days": 1,  # 免费版最多 ~1 天历史
+    "forecast_days": 7,
+}
+```
+
+### Gamma API 市场发现
+
+```python
+# 获取天气类市场的 condition_id（用于查历史价格）
+# 来源: gamma-api.polymarket.com
+
+async def discover_weather_markets() -> list[dict]:
+    url = "https://gamma-api.polymarket.com/markets"
+    params = {
+        "tag": "weather",  # 或 "temperature"
+        "active": True,
+        "closed": False,
+        "limit": 100,
+    }
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(url, params=params)
+        return resp.json()
+```
+
+### 回测数据流水线 (Best Practice)
+
+参考 polymarket-tmax-lab 的架构：
+
+```
+1. 市场发现 → Gamma API 获取天气市场列表
+2. 规则解析 → 从 market description 提取城市、日期、温度单位、bucket 定义
+3. 历史价格 → CLOB /prices-history 获取每个 bucket 的价格时间序列
+4. 历史预报 → Open-Meteo historical-forecast-api 获取过去某天的预报
+5. 历史观测 → Open-Meteo archive-api 获取真实温度（验证用）
+6. 概率计算 → 用历史预报计算 bucket 概率
+7. Edge 计算 → model_prob - market_price
+8. 模拟交易 → 按 edge 阈值下单，用真实价格结算
+9. P&L 计算 → bucket_hit * (1 - price) - (1 - bucket_hit) * price
+```
+
+### ⚠️ 关键陷阱：避免 Look-Ahead Bias
+
+```python
+# ❌ 错误：用 resolution-day 的预报计算 edge
+forecast = get_forecast(date="2025-06-15")  # 6/15 的预报
+price = get_price(date="2025-06-14")  # 6/14 的价格
+# → 你在用未来信息交易过去
+
+# ✅ 正确：用 trade-date 的预报计算 edge
+forecast = get_forecast(date="2025-06-14")  # 6/14 的预报
+price = get_price(date="2025-06-14")  # 6/14 的价格
+resolution = get_observation(date="2025-06-15")  # 6/15 的真实温度
+```
+
+### EMOS 概率校准 (推荐)
+
+原始 ensemble 欠散 20-40%，需要 EMOS 校准：
+
+```python
+# EMOS (Ensemble Model Output Statistics) 校准
+# 参考: Gneiting et al. 2005
+# 原理: 用历史 (预报, 观测) 对训练线性校准
+
+# 校准后: μ_calibrated = a + b * ensemble_mean
+#          σ_calibrated = c + d * ensemble_std
+# 其中 a, b, c, d 通过最小化 CRPS 训练
+
+# Python 实现参考:
+# - github.com/btrotta-bom/rainforests-paper-code (BOM)
+# - github.com/YoungseokOh/polymarket-tmax-lab (pmtmax)
+# - IMPROVER library: improver.readthedocs.io/en/latest/
+```
+
+### 开源参考实现
+
+| 项目 | 用途 | 链接 |
+|------|------|------|
+| polymarket-tmax-lab | 完整回测框架（DuckDB+Parquet） | github.com/YoungseokOh/polymarket-tmax-lab |
+| PolyWeather | 生产级天气交易栈（含 EMOS） | github.com/yangyuan-zhen/PolyWeather |
+| polymarket-backtester | 通用 Polymarket 回测器 | github.com/geckopunk1337/polymarket-backtester |
+| IMPROVER | EMOS 校准库 | improver.readthedocs.io |
+| rainforests-paper-code | EMOS benchmark 代码 | github.com/btrotta-bom/rainforests-paper-code |
 
 ---
 
 ## Station Bias 修正系统
 
-### 机制
-
 EMA (指数移动平均) 追踪每个站点的预报偏差：
 
 ```python
-# station_bias.py
 bias_c = alpha * error + (1.0 - alpha) * bias_c  # alpha=0.15
 ```
 
-### Prior Bias (先验偏差)
-
-在 warmup 期间（30 天），使用 ERA5 冷偏差先验值：
+warmup 期间（30 天）使用 ERA5 冷偏差先验值：
 
 | 站点 | 先验偏差 (°C) |
 |------|--------------|
@@ -104,256 +309,99 @@ bias_c = alpha * error + (1.0 - alpha) * bias_c  # alpha=0.15
 | London | 0.8 |
 | Tokyo | 0.8 |
 | Seoul | 0.9 |
-| Shanghai | 0.9 |
-| Beijing | 0.9 |
+| Shanghai/Beijing | 0.9 |
 | Hong Kong | 0.5 |
 | Miami | 0.6 |
 | Dallas | 1.1 |
 | Paris | 0.7 |
 
-warmup 完成后，EMA 偏差覆盖先验值。
-
 ---
 
 ## 概率模型
 
-### GEFS 集合预报
-
-- 31 个 GFS 集合成员 (member00-member30)
-- 直接统计法：桶概率 = 落在桶内的成员数 / 31
-- 不足：GEFS ensemble 通常欠散 20-40%
-
-### Gaussian CDF 回退
-
-当 ensemble 不可用时：
+### 当前：原始集合计数
 
 ```python
-std = forecast.std if forecast.std > 0.5 else 2.5
-z = (temp - mean) / std
-p = 0.5 * (1 + erf(z / sqrt(2)))
+# bucket_probability_numpy: 成员落在桶内的比例
+prob = sum(1 for m in members if low <= m < high) / len(members)
 ```
 
-### BMA 共识
+**问题**: GEFS ensemble 欠散 20-40%，概率估计不准确。
 
-跨源加权：Open-Meteo + NWS + METAR
+### 推荐：EMOS 校准
 
 ```python
-inv_sq = [1.0 / max(s.std**2, 0.01) for s in sources]
-weights = [w / total for w in inv_sq]
+# 用历史 (预报, 观测) 对训练校准参数
+mu_cal = a + b * ensemble_mean  # 偏差校正
+sigma_cal = c + d * ensemble_std  # 散布校正
+prob = gaussian_cdf(high, mu_cal, sigma_cal) - gaussian_cdf(low, mu_cal, sigma_cal)
 ```
 
 ---
 
 ## 回测引擎
 
-### 三种模式
+### 当前模式
 
-1. **run()** — 合成回测，用 Open-Meteo 预报 + archive 观测
-2. **run_real()** — 真实 CLOB 价格回测
-3. **run_portfolio()** — 组合模式，所有策略共享 bankroll
+1. **run()** — 合成回测（synthetic_only=True，无真实数据）
+2. **run_real()** — 真实 CLOB 价格回测（未实现）
 
 ### 费用模型
 
 | 费用 | 值 | 说明 |
 |------|-----|------|
-| Taker fee | 50bps (capped at 1.25%) | v2 规则 |
+| Taker fee | 50bps (capped 1.25%) | v2 规则 |
 | Maker fee | 0% | 限价单免费 |
 | Slippage | 1% | 默认 |
-| Stop loss slippage | 3% | 止损时额外滑点 |
-| Ghost trade loss | 2% | live 模式 |
-| Tail price penalty | 5% | $0.01-$0.15 价格 |
-| Forecast penalty | 5% | 预报派生价格 |
+| Tail price penalty | 5% | $0.01-$0.15 |
 
 ### Fill Model
 
 ```python
-fill_prob_at_best = 0.50  # mid 价格
-fill_prob_inside = 0.25   # 优于 mid
-fill_prob_tail = 0.10     # 尾部价格 ($0.01 或 $0.99)
-```
-
-### Metrics
-
-- **Sharpe**: 年化 (sqrt(365))，Bessel 校正 (n-1)
-- **Sortino**: downside variance 除以总观测数
-- **Max Drawdown**: bankroll series 峰谷比
-- **Brier Score**: bucket_hit 或 PnL 符号作为 outcome proxy
-
----
-
-## Polymarket Weather City Universe (36 cities)
-
-### Tier 1 — Very High Liquidity ($6M+)
-
-Hong Kong, Shanghai, NYC, Tokyo, Beijing, London
-
-### Tier 2 — High Liquidity ($3–5M)
-
-Madrid, Taipei, Seoul, Wellington, Miami, LA, Chicago, Milan, Paris, Wuhan, Denver, Munich, Austin, Moscow, Warsaw, San Francisco
-
-### Tier 3 — Medium Liquidity ($2–3M)
-
-Istanbul, Jakarta, Mexico City, Atlanta, Dallas, Amsterdam, Busan, Seattle, Helsinki, Lagos, Toronto, Buenos Aires, Cape Town
-
----
-
-## CLI 参数
-
-```
-pm-bot backtest [OPTIONS]
-  --strategy STR    策略名 (gopfan2)
-  --bankroll FLOAT  起始资金 (默认 100)
-  --days INT        回测天数 (默认 90)
-  --kelly FLOAT     Kelly fraction (默认 0.10)
-  --stop-loss FLOAT 止损比例 (默认 0.0)
-  --spread FLOAT    真实价差 (默认 0.0)
-  --live            Live-trading 模式
-  --portfolio       组合模式
-  --real            使用真实 CLOB 历史价格
-  --csv PATH        导出 CSV
+fill_prob_at_best = 0.50
+fill_prob_inside = 0.25
+fill_prob_tail = 0.10
 ```
 
 ---
 
 ## City Variance Filtering
 
-### 机制
-
-追踪每个城市的预报误差统计（MAE、std、bias），跳过高波动城市：
-
-```python
-# core/city_variance.py
-class CityVarianceDB:
-    def record(city, predicted_c, observed_c)  # 记录误差
-    def get_tier(city) -> str  # low/medium/high/unknown
-    def is_tradeable(city, max_mae=3.5, max_std=4.0) -> bool
-```
-
-### Tier 分类
+追踪每个城市的预报误差统计（MAE、std、bias），跳过高波动城市。
 
 | Tier | MAE 阈值 | 典型城市 |
 |------|----------|----------|
 | low  | < 2.0°C | Miami, LA, SF, HK, Jeddah, Lagos, Jakarta |
 | medium | 2.0-3.5°C | NYC, London, Tokyo, Seoul, Paris |
-| high | > 3.5°C | Chicago (spring temp swings) |
-
-### 集成点
-
-- `scan` 命令自动过滤
-- `watch` 命令自动过滤
-- `daemon` 命令自动过滤
-- `trade` 命令自动过滤
-- CLI: `pm-bot variance [--populate] [--all]`
-
-### 阈值
-
-| 参数 | 默认值 | 说明 |
-|------|--------|------|
-| max_mae | 3.5°C | 最大允许 MAE |
-| max_std | 4.0°C | 最大允许误差标准差 |
-| MIN_OBSERVATIONS | 10 | 最小样本数才启用数据驱动过滤 |
-
-### Prior（先验）
-
-数据不足时使用预设 tier（基于研究 + 回测）。数据超过 10 条后切换为数据驱动。
+| high | > 3.5°C | Chicago |
 
 ---
 
-## 策略配置参数传递 (2026-05-13)
-
-### 机制
-
-`STRATEGY_DEFAULTS` 在 `get_all_strategies()` 创建策略实例时传入构造函数，而非在 `run()` 时注入 kwargs。
-
-```python
-# base.py — get_all_strategies()
-from pm_bot.models.config import STRATEGY_DEFAULTS
-
-_all_strategies = {
-    "gopfan2": Gopfan2Strategy(**STRATEGY_DEFAULTS.get("gopfan2", {})),
-    "laddering": LadderingStrategy(**STRATEGY_DEFAULTS.get("laddering", {})),
-    # ...
-}
-```
-
-所有策略构造函数必须接受 `**kwargs` 以忽略未知 config key。
-
-### ⚠️ 反模式：run() kwargs 注入 config
-
-```python
-# ❌ 错误：config 在 run() 时注入，构造函数默认值被忽略
-kwargs = {}
-for k, v in STRATEGY_DEFAULTS.get(strat_name, {}).items():
-    kwargs[k] = v  # kelly_fraction 等永远不会生效
-recs = strat.run(ev, **kwargs)
-
-# ✅ 正确：config 在构造时传入，run() kwargs 仅用于运行时覆盖（如 bankroll）
-strat = Gopfan2Strategy(**STRATEGY_DEFAULTS.get("gopfan2", {}))
-recs = strat.run(ev, bankroll=actual_bankroll)  # 运行时覆盖
-```
-
-### 教训
-
-`STRATEGY_DEFAULTS` 包含两类 key：
-1. **构造函数参数** — `kelly_fraction`, `edge_threshold`, `max_position_usd` → 构造时生效
-2. **策略特有参数** — `min_mispricing`, `tail_no_threshold` → 构造时生效
-
-Daemon 的 `run()` kwargs 注入对这两类都无效（策略不从 kwargs 读这些 key）。
-
----
-
-## Resolution Delay Edge 语义 (2026-05-13)
-
-### ⚠️ 踩坑：edge 定义不一致
-
-所有策略 edge = `model_prob - market_price`，但 resolution_delay 曾用 `edge = 1.0 - yes_price`（价格间隙）。
-
-这导致 daemon Kelly 重建 `p_true = yes_price + edge = yes_price + (1.0 - yes_price) = 1.0`，Kelly 认为 100% 胜率。
-
-### 修复
-
-```python
-# ❌ 错误
-edge = price_gap  # 1.0 - yes_price
-
-# ✅ 正确
-edge = confidence - b.yes_price  # model_prob - market_price
-```
-
-### 规则
-
-**所有策略的 edge 必须是 `model_prob - market_price`**，保持 Kelly 重建一致性。
-
----
-
-## Staged Entry 集成 (2026-05-13)
-
-### 机制
+## Staged Entry
 
 时间衰减仓位缩放：>48h skip, 48-24h 30%, 24-8h 60%, <8h full。
 
+---
+
+## 策略配置参数传递
+
+`STRATEGY_DEFAULTS` 在 `get_all_strategies()` 创建策略实例时传入构造函数：
+
 ```python
-# core/staged_entry.py
-apply_staged_entry_for_event(recs, event_date) -> list[Recommendation]
+_all_strategies = {
+    "gopfan2": Gopfan2Strategy(**STRATEGY_DEFAULTS.get("gopfan2", {})),
+    "forecast_arb": ForecastArbStrategy(**STRATEGY_DEFAULTS.get("forecast_arb", {})),
+}
 ```
 
-### 集成点
-
-| 流程 | staged entry |
-|------|-------------|
-| backtest | ✅ |
-| daemon | ✅ |
-| scan | ❌ (display only) |
-| trade | ❌ (manual) |
+**反模式**: 不要在 run() kwargs 注入 config，构造函数参数必须在构造时传入。
 
 ---
 
 ## 未来改进方向
 
-1. **Out-of-sample 验证** — 拆分 train/test 数据，验证策略泛化能力
-2. **Reliability diagram** — 检查概率校准，计算 Brier score decomposition
-3. **实时温度预报集成** — 接入 ECMWF ensemble，获取更多集合成员
-4. **订单簿深度数据** — 用 Polymeteo API 获取真实 L2 数据，精确模拟成交
-5. **时间窗口策略** — 在模型更新后 30 秒内下单，捕获价格发现窗口
-6. **NO 策略重新开发** — 在解决成交率问题后，重新引入尾部 NO 策略
-7. **自适应 BMA 权重** — 用历史预报-观测对动态校准模型权重
+1. **接入真实回测数据** — CLOB /prices-history + Open-Meteo historical-forecast-api
+2. **EMOS 概率校准** — 原始 ensemble 欠散，需校准后才能准确计算 edge
+3. **Out-of-sample 验证** — 拆分 train/test，验证策略泛化
+4. **Reliability diagram** — 检查概率校准质量
+5. **gopfan2 NO 方向** — gopfan2 也买 NO（>0.45），当前代码缺失
