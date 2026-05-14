@@ -31,7 +31,24 @@ SMART_WALLETS = {
         "style": "tail_buy",
         "description": "Tail YES buys below $0.15",
     },
+    "0x44c1DfE43260C94Ed4F1D00dE2e1f80Fb113Ebc1": {
+        "name": "aenews2",
+        "pnl": 79_000,
+        "style": "forecast_arb",
+        "description": "High win rate (84%), forecast arb style",
+    },
+    "0x331bf91c132af9d921e1908ca0979363fc47193f": {
+        "name": "BeefSlayer",
+        "pnl": 62_000,
+        "style": "mixed",
+        "description": "Mixed weather market strategy",
+    },
 }
+
+# Cache for market-to-event mapping
+_market_event_cache: dict[str, dict] = {}
+_cache_ttl: float = 300.0  # 5 minutes
+_cache_timestamp: float = 0.0
 
 DATA_API_BASE = "https://data-api.polymarket.com"
 GAMMA_API_BASE = "https://gamma-api.polymarket.com"
@@ -266,12 +283,37 @@ class WalletTracker:
         trade: WalletTrade,
         weather_events: dict[str, list[dict]],
     ) -> dict | None:
-        """Find which weather event a trade belongs to."""
+        """Find which weather event a trade belongs to.
+
+        Uses a cache to avoid repeated API calls for the same market.
+        """
+        global _market_event_cache, _cache_timestamp
+
+        # Check cache first
+        cache_key = f"{trade.market_id}:{trade.token_id}"
+        if cache_key in _market_event_cache:
+            cached = _market_event_cache[cache_key]
+            if time.time() - cached.get("timestamp", 0) < _cache_ttl:
+                return cached.get("event_info")
+
         # Check each active weather event
         for city_slug, events in weather_events.items():
             for ev in events:
                 for market in ev.get("markets", []):
-                    # Check if trade's token matches this market
+                    # Try matching by condition_id
+                    if market.get("conditionId") == trade.market_id:
+                        event_info = {
+                            "event": ev,
+                            "market": market,
+                            "city_slug": city_slug,
+                        }
+                        _market_event_cache[cache_key] = {
+                            "event_info": event_info,
+                            "timestamp": time.time(),
+                        }
+                        return event_info
+
+                    # Try matching by token_id
                     if market.get("clobTokenIds"):
                         tokens = market["clobTokenIds"]
                         if isinstance(tokens, str):
@@ -283,12 +325,22 @@ class WalletTracker:
                                 continue
 
                         if trade.token_id in tokens:
-                            return {
+                            event_info = {
                                 "event": ev,
                                 "market": market,
                                 "city_slug": city_slug,
                             }
+                            _market_event_cache[cache_key] = {
+                                "event_info": event_info,
+                                "timestamp": time.time(),
+                            }
+                            return event_info
 
+        # Cache miss
+        _market_event_cache[cache_key] = {
+            "event_info": None,
+            "timestamp": time.time(),
+        }
         return None
 
     def _compute_confidence(
