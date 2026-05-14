@@ -32,8 +32,7 @@ dev = [
 package = true
 
 [tool.setuptools.packages.find]
-include = ["bots*", "shared*"]
-exclude = ["pm_bot*"]
+include = ["bots*", "shared*", "pm_bot*"]
 
 [project.scripts]
 pm-bot = "bots.weather.cli.app:app"

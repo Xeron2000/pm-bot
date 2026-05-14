@@ -1,58 +1,58 @@
-# Polymarket Bot 合集 — AI Agent 指南
+# Polymarket Weather Bot — AI Agent 指南
 
 ## 项目概述
 
-Polymarket 预测市场自动交易机器人合集。每个 Bot 独立运作，共享基础设施。
+Polymarket 每日天气市场自动交易机器人。基于 Open-Meteo GEFS 集合预报的模型 vs 市场定价偏差策略。
 
 ## 目录结构
 
 ```
 pm/
-├── bots/                            # Bot 目录 (每个 Bot 独立)
-│   ├── weather/                     # 天气 Bot
-│   └── smart_wallet/                # 聪明钱包 Bot
-├── shared/                          # 共享模块
-│   └── polymarket.py                # 共享 API 客户端
-├── docs/                            # 文档
-└── AGENTS.md                        # 本文件
+├── bots/weather/           # 天气 Bot（唯一 bot）
+│   ├── core/               # 核心模块
+│   ├── strategies/         # 策略
+│   ├── backtest/           # 回测
+│   ├── cli/                # CLI
+│   └── models/             # 数据模型
+├── docs/                   # 文档
+├── config.toml             # 配置
+└── AGENTS.md               # 本文件
 ```
 
-## Bot 列表
+## 策略
 
-### Weather Bot (`bots/weather/`)
-- **目标**: Polymarket 每日天气市场（全球 33 城市）
-- **策略**: 2 个核心策略
-  - `gopfan2` — 尾部YES彩票（mid ≤ $0.15，kelly=0.25）
-  - `forecast_arb` — 模型 vs 市场定价偏差（15%+ mispricing，kelly=0.25）
-- **入口**: `pm-bot scan|trade|backtest|daemon`
-- **核心**: `bots/weather/core/`, `bots/weather/strategies/`
+### forecast_arb（核心策略）
+- **逻辑**: 集合预报概率 vs Polymarket 价格，mispricing ≥ 15% 时建仓
+- **数据源**: Open-Meteo GEFS 31 成员集合
+- **仓位**: Kelly criterion × 0.25 (quarter Kelly)
+- **过滤**: max_market_price ≤ $0.30
 
-### ~~聪明钱包 Bot (`bots/smart_wallet/`)~~ — 已删除
-- 删除原因：只有信号生成无交易执行，回测未验证，不产生实际价值
+### gopfan2（变体）
+- **逻辑**: 与 forecast_arb 相同，额外过滤 mid ≤ $0.15 的尾部 YES
+- **灵感**: 跟踪 gopfan2 钱包策略（$343K+ 利润）
 
-## 共享模块 (`shared/`)
+## 共享模块
 
 | 模块 | 用途 |
 |------|------|
-| `shared/polymarket.py` | 共享 Polymarket API 客户端 |
-
-## 文档 (`docs/`)
-
-| 文件 | 用途 |
-|------|------|
-| `docs/polymarket-trading-bot-plan.md` | 早期研究计划 |
+| `core/weather.py` | Open-Meteo 集合预报 |
+| `core/clob.py` | Polymarket CLOB 交易执行 |
+| `core/risk.py` | 熔断器（L1/L2/L3）、城市限额、日限额 |
+| `core/kelly.py` | Kelly criterion 仓位计算 |
+| `core/polymarket.py` | Polymarket 市场数据 API |
+| `core/ws.py` | WebSocket 实时价格 |
+| `core/observation.py` | METAR 观测值过滤 |
+| `core/paper_trade.py` | 纸面交易（SQLite） |
+| `core/staged_entry.py` | 按时间分级建仓 |
+| `backtest/engine.py` | 回测引擎 |
+| `backtest/real_data.py` | 真实历史数据 |
+| `backtest/costs.py` | 费用/滑点模型 |
 
 ## 开发指南
 
-### 新增 Bot
-1. 在 `bots/` 下创建新目录（如 `bots/my_bot/`）
-2. 创建 `__init__.py`, `run.py` (入口), 核心模块
-3. 复用 `shared/polymarket.py` 的 API 客户端
-4. 更新 README.md 和本文档
-
 ### 代码风格
 - Python 3.12+
-- 使用 `uv` 管理依赖
+- `uv` 管理依赖
 - `ruff` 格式化 + `mypy` 类型检查
 - 异步优先 (`asyncio`, `httpx`)
 
@@ -60,13 +60,20 @@ pm/
 
 | 端点 | 用途 | 认证 |
 |------|------|------|
-| `https://data-api.polymarket.com/trades` | 交易历史 | 无需 |
 | `https://gamma-api.polymarket.com/markets` | 市场列表 | 无需 |
 | `https://clob.polymarket.com/*` | 交易执行 | 需要 API Key |
+| `wss://ws-subscriptions-clob.polymarket.com/ws/market` | 实时价格 | 无需 |
 
-### 测试
+### CLI 命令
+
 ```bash
-pytest tests/ -q
+pm-bot scan          # 扫描市场机会
+pm-bot watch         # 实时监控（WebSocket）
+pm-bot trade         # 执行交易
+pm-bot settle        # 结算已结束市场
+pm-bot orders        # 查看待完成订单
+pm-bot backtest      # 回测
+pm-bot daemon start  # 后台守护进程
 ```
 
 ---

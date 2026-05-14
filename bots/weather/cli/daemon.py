@@ -16,7 +16,6 @@ from rich.console import Console
 from rich.table import Table
 
 from pm_bot.backtest.costs import FillModel
-from pm_bot.core.aggregation import fetch_all_sources
 from pm_bot.core.clob import ClobTrader
 from pm_bot.core.config_loader import (
     get_sizing,
@@ -30,10 +29,8 @@ from pm_bot.core.polymarket import fetch_weather_events
 from pm_bot.core.risk import RiskManager, RiskCheckResult
 from pm_bot.core.weather import fetch_forecast
 from pm_bot.core.observation import fetch_observation, filter_recommendations
-from pm_bot.core.city_variance import filter_recommendations as filter_by_variance
 from pm_bot.core.staged_entry import apply_staged_entry_for_event
 from pm_bot.models.config import DEFAULT_CITIES, STRATEGY_DEFAULTS, resolve_city_alias
-from pm_bot.models.forecast import ConsensusForecast
 from pm_bot.models.market import Recommendation, ForecastResult
 from pm_bot.strategies.base import ALL_STRATEGIES
 from pm_bot.cli.notifications import notify, send_discord, send_telegram, format_daemon_message
@@ -196,14 +193,11 @@ class TradingDaemon:
             self._sync_dynamic_risk_limits()
 
             forecasts: dict[str, ForecastResult] = {}
-            consensus_forecasts: dict[str, Any] = {}
             obs_map: dict[str, Any] = {}
             for ev in events:
                 fc = await fetch_forecast(client, ev.city, ev.date)
                 if fc:
                     forecasts[ev.city] = fc
-                cf = await fetch_all_sources(client, ev.city, ev.date, self.config, fc)
-                consensus_forecasts[ev.city] = cf
 
             for city in {ev.city for ev in events}:
                 obs = await fetch_observation(client, city)
@@ -231,27 +225,12 @@ class TradingDaemon:
                     # Apply staged entry scaling based on time to resolution
                     recs = apply_staged_entry_for_event(recs, ev.date)
 
-                    # Filter by city variance
-                    recs = filter_by_variance(recs)
-
                     for rec in recs:
                         if rec.edge < 0.05:
                             continue
                         dup_db = self.paper if self.dry_run else self.db
                         if dup_db is not None and dup_db.check_duplicate_order(rec.bucket.market_id, rec.direction):
                             continue
-
-                        # PRD 3B: Apply consensus agreement to edge/Kelly
-                        consensus: ConsensusForecast | None = consensus_forecasts.get(rec.city)
-                        agreement_adj = 1.0
-                        if consensus and consensus.sources:
-                            # Recompute edge using consensus probability if available
-                            if consensus.agreement_score >= 0.8 and len(consensus.sources) >= 3:
-                                agreement_adj = 1.5  # 3+ source agreement → ×1.5
-                            elif consensus.agreement_score >= 0.6 and len(consensus.sources) >= 2:
-                                agreement_adj = 1.25
-                            elif consensus.agreement_score < 0.4:
-                                agreement_adj = consensus.agreement_score  # disagreement → reduce
 
                         risk_result = self.risk_manager.full_check(
                             city=rec.city,
@@ -272,7 +251,7 @@ class TradingDaemon:
                                 )
                             continue
 
-                        effective_kelly = self.kelly_fraction_val * risk_result.kelly_adjustment * agreement_adj
+                        effective_kelly = self.kelly_fraction_val * risk_result.kelly_adjustment
                         if self.dry_run and self.paper is not None:
                             daily_spent = self.paper.daily_spent
                             city_spent = self.paper.get_city_spent(rec.city)

@@ -10,7 +10,6 @@ from typing import Any
 from pm_bot.core.polymarket import fetch_weather_events
 from pm_bot.core.weather import fetch_forecast
 from pm_bot.core.observation import fetch_observation, filter_recommendations
-from pm_bot.core.city_variance import filter_recommendations as filter_by_variance
 from pm_bot.strategies.base import ALL_STRATEGIES, Strategy
 from pm_bot.models.config import DEFAULT_CITIES, STRATEGY_DEFAULTS, resolve_city_alias
 from pm_bot.cli.display import render_recommendations, render_verbose
@@ -76,7 +75,7 @@ async def run_scan(
                     if ev.city in obs_map:
                         recs = filter_recommendations(recs, obs_map[ev.city])
                     # Filter by city variance (skip high-volatility cities)
-                    recs = filter_by_variance(recs)
+                    pass  # variance filter removed
                     all_recs.extend(recs)
 
     if verbose:

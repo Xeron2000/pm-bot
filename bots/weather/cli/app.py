@@ -220,29 +220,6 @@ def daemon_status_cmd(
 
 
 @app.command()
-def variance(
-    populate: bool = typer.Option(False, "--populate", "-p", help="Populate variance from historical data"),
-    days: int = typer.Option(90, "--days", "-d", help="Days of history to use"),
-    max_mae: float = typer.Option(3.5, "--max-mae", help="Max MAE threshold (°C)"),
-    max_std: float = typer.Option(4.0, "--max-std", help="Max error std threshold (°C)"),
-    all_cities: bool = typer.Option(False, "--all", "-a", help="Show all cities including blocked"),
-    debug: bool = typer.Option(False, "--debug", help="Enable debug logging"),
-):
-    """Show city variance scores and tradeability."""
-    from pm_bot.cli.variance_cmd import run_variance
-
-    asyncio.run(
-        run_variance(
-            populate=populate,
-            days=days,
-            max_mae=max_mae,
-            max_std=max_std,
-            show_all=all_cities,
-            debug=debug,
-        )
-    )
-
-@app.command()
 def backtest(
     strategy: Optional[str] = typer.Option(None, "--strategy", "-s", help="Strategy name"),
     all_strats: bool = typer.Option(False, "--all", help="Run all strategies"),

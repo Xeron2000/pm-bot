@@ -12,7 +12,6 @@ from pm_bot.core.polymarket import fetch_weather_events
 from pm_bot.core.weather import fetch_forecast
 from pm_bot.core.ws import MarketWsClient
 from pm_bot.core.observation import fetch_observation, filter_recommendations
-from pm_bot.core.city_variance import filter_recommendations as filter_by_variance
 from pm_bot.strategies.base import ALL_STRATEGIES, Strategy
 from pm_bot.models.config import DEFAULT_CITIES, STRATEGY_DEFAULTS, resolve_city_alias
 from pm_bot.core.config_loader import get_station_for_city, load_config
@@ -93,7 +92,7 @@ async def run_watch(
                         all_recs.extend(recs)
 
                 # Filter by city variance
-                all_recs = filter_by_variance(all_recs)
+                pass  # variance filter removed
 
                 if observed:
                     obs_map: dict[str, Any] = {}

@@ -1,111 +1,92 @@
-# Polymarket Bot 合集
+# Polymarket Weather Trading Bot
 
-> 一组自动化交易机器人，用于 [Polymarket](https://polymarket.com) 预测市场。
+> 自动化 Polymarket 每日天气市场交易机器人。基于集合天气预报的模型 vs 市场定价偏差策略。
 
-## 机器人列表
+## 核心策略
 
-| Bot | 目录 | 目标 | 策略 |
-|-----|------|------|------|
-| **天气 Bot** | `bots/weather/` | 每日天气市场 | 模型 vs 市场定价偏差，尾部 YES 彩票 |
-| **聪明钱包 Bot** | `bots/smart_wallet/` | 全平台跟单 | 跟随高胜率钱包 + 逆向策略 |
+**forecast_arb** — 利用 Open-Meteo GEFS 31 成员集合预报计算真实概率，与 Polymarket 市场价格比较。当 mispricing ≥ 15% 时，用 Kelly criterion 建仓。
 
----
-
-## 1. 天气 Bot (`bots/weather/`)
-
-基于多源天气预报（Open-Meteo GEFS 31成员集合、NWS、METAR）的 Polymarket 每日天气市场交易系统。
+## 快速开始
 
 ```bash
-# 扫描市场
+# 安装
+uv sync
+
+# 扫描市场机会
 pm-bot scan --cities "New York,London,Tokyo"
 
+# 实时监控（WebSocket）
+pm-bot watch --interval 30
+
 # 回测
-pm-bot backtest --strategy gopfan2 --days 90 --bankroll 100 --live
+pm-bot backtest --days 90 --bankroll 100 --live
+
+# 纸面交易（无需 API Key）
+pm-bot trade --dry-run
 
 # 实盘交易
 pm-bot trade --confirm
 ```
 
-详见: `bots/weather/README.md` (TODO)
-
----
-
-## 2. 聪明钱包 Bot (`bots/smart_wallet/`)
-
-基于 Polymarket 链上数据分析的跟单交易系统。识别高胜率钱包并跟随/逆向交易。
-
-```bash
-# 发现聪明钱包
-python bots/smart_wallet/run.py discover
-
-# 回测
-python bots/smart_wallet/run.py backtest
-
-# 实时监控
-python bots/smart_wallet/run.py live
-
-# 完整流水线
-python bots/smart_wallet/run.py full-pipeline
-```
-
-详见: [docs/SMART_WALLET_STRATEGY.md](docs/SMART_WALLET_STRATEGY.md)
-
----
-
 ## 项目结构
 
 ```
 pm/
-├── bots/                            # Bot 目录
-│   ├── weather/                     # 天气 Bot
-│   │   ├── core/                    # 核心模块
-│   │   ├── strategies/              # 策略
-│   │   ├── backtest/                # 回测框架
-│   │   ├── cli/                     # CLI 命令
-│   │   └── run_snowball.py          # 独立运行脚本
-│   └── smart_wallet/                # 聪明钱包 Bot
-│       ├── api.py                   # API 客户端
-│       ├── tracker.py               # 钱包发现
-│       ├── strategy.py              # 策略
-│       ├── backtest.py              # 回测
-│       ├── monitor.py               # 实时监控
-│       └── run.py                   # 独立运行脚本
-├── shared/                          # 共享模块
-│   └── polymarket.py                # 共享 API 客户端
-├── docs/                            # 文档
-│   ├── polymarket-trading-bot-plan.md
-│   └── SMART_WALLET_STRATEGY.md
-├── AGENTS.md                        # AI Agent 指南
-├── README.md                        # 本文件
-└── pyproject.toml                   # 项目配置
+├── bots/weather/
+│   ├── core/              # 核心模块
+│   │   ├── weather.py     # Open-Meteo 集合预报
+│   │   ├── clob.py        # Polymarket CLOB 交易
+│   │   ├── risk.py        # 熔断器 + 仓位限额
+│   │   ├── kelly.py       # Kelly criterion
+│   │   ├── ws.py          # WebSocket 实时价格
+│   │   ├── observation.py # METAR 观测过滤
+│   │   └── paper_trade.py # 纸面交易
+│   ├── strategies/
+│   │   ├── base.py        # 策略基类
+│   │   ├── gopfan2.py     # 尾部 YES 策略
+│   │   └── forecast_arb.py # 模型 vs 市场 mispricing
+│   ├── backtest/
+│   │   ├── engine.py      # 回测引擎
+│   │   ├── real_data.py   # 真实市场数据
+│   │   └── costs.py       # 费用模型
+│   └── cli/               # CLI 命令
+├── docs/                  # 研究文档
+├── config.toml            # 配置
+└── pyproject.toml         # 项目配置
 ```
 
-## 共享资源
+## 配置
 
-- `shared/polymarket.py` — 共享的 Polymarket API 客户端
-- `AGENTS.md` — AI Agent 开发指南
-- `docs/` — 策略文档和研究计划
+编辑 `config.toml`：
+
+```toml
+[clob]
+api_key = ""         # 或设 CLOB_API_KEY 环境变量
+api_secret = ""
+api_passphrase = ""
+
+[sizing]
+max_single = 5.0     # 单笔最大 $5
+max_daily = 50.0     # 日限额 $50
+kelly_fraction = 0.25 # 1/4 Kelly
+```
+
+## 环境变量
+
+| 变量 | 用途 |
+|------|------|
+| `POLY_PK` | Polymarket 私钥 |
+| `CLOB_API_KEY` | CLOB API Key |
+| `CLOB_SECRET` | CLOB Secret |
+| `CLOB_PASS_PHRASE` | CLOB Passphrase |
 
 ## 开发
 
 ```bash
-# 安装依赖
-uv sync
-
-# Lint
-ruff check bots/ shared/
-
-# 类型检查
-mypy bots/ shared/
-
-# 测试
-pytest tests/ -q
+ruff check bots/
+mypy bots/
 ```
-
-## License
-
-MIT License. See [LICENSE](LICENSE) for details.
 
 ## Disclaimer
 
-This software is for educational and research purposes only. Trading on prediction markets involves significant financial risk. Past backtest performance does not guarantee future results. The authors are not responsible for any financial losses incurred through use of this software.
+This software is for educational and research purposes only. Trading involves significant financial risk. Past performance does not guarantee future results.
