@@ -251,3 +251,36 @@ Researched Polymarket CLOB prices-history API, Open-Meteo historical-forecast-ap
 ### Next Steps
 
 - None - task complete
+
+
+## Session 24: Switch to 00 aggressive mode
+
+**Date**: 2026-05-14
+**Task**: Switch to 00 aggressive mode
+**Branch**: `main`
+
+### Summary
+
+Changed to half Kelly (0.50), max_single_pct=0.15, max_position=5 for 00 bankroll. Updated STRATEGY_DEFAULTS and spec with growth path and stop-loss.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9cc633d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 23
+- **Total Sessions**: 24
 - **Last Active**: 2026-05-14
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~253 | Active |
+| `journal-2.md` | ~286 | Active |
 | `journal-1.md` | ~588 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 24 | 2026-05-14 | Switch to 00 aggressive mode | `9cc633d` | `main` |
 | 23 | 2026-05-14 | Research real backtest data pipeline, update specs | `ca86b25` | `main` |
 | 22 | 2026-05-14 | Project audit: prune dead strategies, fix Kelly params | `342eee1` | `main` |
 | 21 | 2026-05-13 | Code review fixes — config alignment, edge semantics, dead code cleanup | `42e378e` | `main` |
