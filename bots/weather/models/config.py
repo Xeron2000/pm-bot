@@ -111,6 +111,22 @@ STRATEGY_DEFAULTS: dict[str, dict[str, float]] = {
         "max_single_pct": 0.15,
         "max_position_usd": 15.0,
     },
+    "emos_gopfan2": {
+        "yes_max": 0.15,
+        "min_model_prob": 0.18,
+        "edge_threshold": 0.08,
+        "kelly_fraction": 0.25,
+        "max_single_pct": 0.02,
+        "max_position_usd": 2.0,
+    },
+    "emos_forecast_arb": {
+        "min_mispricing": 0.15,
+        "min_model_prob": 0.05,
+        "max_market_price": 0.30,
+        "kelly_fraction": 0.25,
+        "max_single_pct": 0.02,
+        "max_position_usd": 2.0,
+    },
 }
 
 CACHE_TTL: dict[str, int] = {

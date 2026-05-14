@@ -151,15 +151,20 @@ def get_all_strategies() -> dict[str, Strategy]:
     Core strategies:
     - gopfan2: tail-YES lottery tickets (mid <= $0.15)
     - forecast_arb: model vs market mispricing exploit
+    - emos_gopfan2: EMOS-enhanced gopfan2 (model-validated tails)
+    - emos_forecast_arb: EMOS-enhanced forecast arb (calibrated probabilities)
     """
     global _all_strategies
     if _all_strategies is None:
         from pm_bot.strategies.forecast_arb import ForecastArbStrategy
+        from pm_bot.strategies.emos_strategies import EMOSGopfan2Strategy, EMOSForecastArbStrategy
         from pm_bot.models.config import STRATEGY_DEFAULTS
 
         _all_strategies = {
             "gopfan2": Gopfan2Strategy(**STRATEGY_DEFAULTS.get("gopfan2", {})),
             "forecast_arb": ForecastArbStrategy(**STRATEGY_DEFAULTS.get("forecast_arb", {})),
+            "emos_gopfan2": EMOSGopfan2Strategy(**STRATEGY_DEFAULTS.get("emos_gopfan2", {})),
+            "emos_forecast_arb": EMOSForecastArbStrategy(**STRATEGY_DEFAULTS.get("emos_forecast_arb", {})),
         }
     return _all_strategies
 

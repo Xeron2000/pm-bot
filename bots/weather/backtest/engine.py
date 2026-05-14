@@ -359,10 +359,93 @@ class BacktestEngine:
         return low <= obs_c <= high
 
     def _real_bucket_hit(self, ev: ResolvedEvent, bucket: TemperatureBucket) -> bool:
-        return self._bucket_hit(bucket, ev.resolved_c)
+        # Get resolved temp from the actual_temps cache
+        key = (ev.city, ev.target_date)
+        obs_c = self._actual_temps.get(key) if hasattr(self, '_actual_temps') else None
+        if obs_c is None:
+            # If no actual temp, check if any market is winning
+            for m in ev.markets:
+                if m.winning:
+                    # The winning bucket hit
+                    parsed = self._parse_bucket_from_question(m.question)
+                    if parsed and bucket.temp_low_c == parsed[0] and bucket.temp_high_c == parsed[1]:
+                        return True
+            return False
+        return self._bucket_hit(bucket, obs_c)
+
+    def _parse_bucket_from_question(self, question: str) -> tuple[float, float] | None:
+        """Extract temp range from bucket question."""
+        import re
+        # Match patterns like "between 52-53°F" or "51°F or below"
+        range_match = re.search(r'between\s+(\d+)-(\d+)°[FC]', question)
+        if range_match:
+            return float(range_match.group(1)), float(range_match.group(2))
+        below_match = re.search(r'(\d+)°[FC]\s+or\s+below', question)
+        if below_match:
+            return -999.0, float(below_match.group(1))
+        above_match = re.search(r'(\d+)°[FC]\s+or\s+(?:above|higher)', question)
+        if above_match:
+            return float(above_match.group(1)), 999.0
+        return None
 
     def _get_resolved_temp(self, ev: ResolvedEvent) -> float | None:
         return getattr(ev, "resolved_c", None)
+
+    def _build_real_event_from_resolution(
+        self, ev: ResolvedEvent, forecast: ForecastResult
+    ) -> tuple[WeatherEvent | None, dict[str, str]]:
+        """Convert a ResolvedEvent into a WeatherEvent with buckets from market data."""
+        from pm_bot.core.parser import parse_bucket
+
+        buckets: list[TemperatureBucket] = []
+        price_sources: dict[str, str] = {}
+
+        for mkt in ev.markets:
+            # Parse the bucket from the question
+            parsed = parse_bucket(mkt.question)
+            if parsed is None:
+                continue
+
+            # Use the best available price
+            yes_price = mkt.yes_price
+            price_source = mkt.price_source or "clob"
+
+            # If we have price history, use the last price before resolution
+            if mkt.price_history:
+                last_price = mkt.price_history[-1]
+                yes_price = last_price.price
+                price_source = "clob"
+
+            if yes_price <= 0:
+                continue
+
+            # Update the parsed bucket with actual price
+            bucket = TemperatureBucket(
+                market_id=mkt.token_id,
+                question=mkt.question,
+                temp_low=parsed.temp_low_c,
+                temp_high=parsed.temp_high_c,
+                temp_unit=parsed.temp_unit,
+                yes_price=yes_price,
+                no_price=1.0 - yes_price,
+                volume=1000.0,
+            )
+            buckets.append(bucket)
+            price_sources[mkt.token_id] = price_source
+
+        if not buckets:
+            return None, {}
+
+        event = WeatherEvent(
+            event_id=ev.event_id,
+            title=ev.title,
+            slug=ev.slug,
+            city=ev.city,
+            date=ev.target_date,
+            measure_type=ev.measure_type,
+            buckets=buckets,
+        )
+        return event, price_sources
 
     async def run_real(self) -> list[BacktestResult]:
         fetcher, preloaded_events, client = await self._get_events_and_fetcher()
@@ -406,10 +489,9 @@ class BacktestEngine:
                             await fetcher.enrich_events_with_dune_prices(client_inner, all_events, dune_key)
 
                 self._actual_temps: dict[str, float] = {}
-                if active_events:
-                    actual_temps = await fetcher.fetch_actual_temps(client_inner, active_events)
-                    self._actual_temps = actual_temps
-                    log.info("actual_temps_loaded", count=len(actual_temps))
+                actual_temps = await fetcher.fetch_actual_temps(client_inner, all_events)
+                self._actual_temps = actual_temps
+                log.info("actual_temps_loaded", count=len(actual_temps))
 
                 active_prices = await fetcher.fetch_active_market_prices(client_inner)
                 self._active_price_cache = active_prices
