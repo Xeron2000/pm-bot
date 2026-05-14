@@ -155,12 +155,15 @@ def get_all_strategies() -> dict[str, Strategy]:
     - emos_forecast_arb: EMOS-enhanced forecast arb (calibrated probabilities)
     - barbell: tail buys + high-conviction central bets (ColdMath style)
     - adaptive_barbell: barbell with dynamic ratio adjustment
+    - smart_wallet: copy-trade profitable weather market wallets
+    - adaptive_smart_wallet: adaptive copy-trading with dynamic sizing
     """
     global _all_strategies
     if _all_strategies is None:
         from pm_bot.strategies.forecast_arb import ForecastArbStrategy
         from pm_bot.strategies.emos_strategies import EMOSGopfan2Strategy, EMOSForecastArbStrategy
         from pm_bot.strategies.barbell import BarbellStrategy, AdaptiveBarbellStrategy
+        from pm_bot.strategies.smart_wallet import SmartWalletStrategy, AdaptiveSmartWalletStrategy
         from pm_bot.models.config import STRATEGY_DEFAULTS
 
         _all_strategies = {
@@ -170,6 +173,8 @@ def get_all_strategies() -> dict[str, Strategy]:
             "emos_forecast_arb": EMOSForecastArbStrategy(**STRATEGY_DEFAULTS.get("emos_forecast_arb", {})),
             "barbell": BarbellStrategy(**STRATEGY_DEFAULTS.get("barbell", {})),
             "adaptive_barbell": AdaptiveBarbellStrategy(**STRATEGY_DEFAULTS.get("adaptive_barbell", {})),
+            "smart_wallet": SmartWalletStrategy(**STRATEGY_DEFAULTS.get("smart_wallet", {})),
+            "adaptive_smart_wallet": AdaptiveSmartWalletStrategy(**STRATEGY_DEFAULTS.get("adaptive_smart_wallet", {})),
         }
     return _all_strategies
 

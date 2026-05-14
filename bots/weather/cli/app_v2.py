@@ -305,6 +305,46 @@ def backtest(
 
 
 @app.command()
+def wallet_scan(
+    max_age: float = typer.Option(60.0, "--max-age", help="Max trade age in minutes"),
+    min_size: float = typer.Option(1.0, "--min-size", help="Min trade size"),
+    min_confidence: float = typer.Option(0.5, "--min-confidence", help="Min signal confidence"),
+):
+    """Scan tracked smart wallets for recent trades."""
+    from pm_bot.cli.wallet_cmd import scan_wallets
+
+    asyncio.run(scan_wallets(
+        max_age_min=max_age,
+        min_trade_size=min_size,
+        min_confidence=min_confidence,
+    ))
+
+
+@app.command()
+def wallet_list():
+    """List tracked smart wallets."""
+    from pm_bot.cli.wallet_cmd import show_wallets
+
+    asyncio.run(show_wallets())
+
+
+@app.command()
+def wallet_monitor(
+    interval: float = typer.Option(30.0, "--interval", help="Scan interval in seconds"),
+    max_age: float = typer.Option(30.0, "--max-age", help="Max trade age in minutes"),
+    min_size: float = typer.Option(5.0, "--min-size", help="Min trade size"),
+):
+    """Continuously monitor smart wallets for new trades."""
+    from pm_bot.cli.wallet_cmd import monitor_wallets
+
+    asyncio.run(monitor_wallets(
+        interval_sec=interval,
+        max_age_min=max_age,
+        min_trade_size=min_size,
+    ))
+
+
+@app.command()
 def status():
     """Show bot status and configuration."""
     from pm_bot.core.config_loader import load_config

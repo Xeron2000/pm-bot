@@ -140,6 +140,26 @@ STRATEGY_DEFAULTS: dict[str, dict[str, float]] = {
         "max_single_pct": 0.02,
         "max_position_usd": 5.0,
     },
+    "smart_wallet": {
+        "kelly_fraction": 0.15,
+        "max_position_usd": 5.0,
+        "min_notional": 1.0,
+        "max_single_pct": 0.03,
+        "min_confidence": 0.5,
+        "min_wallet_pnl": 50_000,
+        "max_trade_age_min": 30.0,
+        "min_trade_size": 5.0,
+    },
+    "adaptive_smart_wallet": {
+        "kelly_fraction": 0.15,
+        "max_position_usd": 10.0,
+        "min_notional": 1.0,
+        "max_single_pct": 0.05,
+        "min_confidence": 0.4,
+        "min_wallet_pnl": 20_000,
+        "max_trade_age_min": 45.0,
+        "min_trade_size": 2.0,
+    },
 }
 
 CACHE_TTL: dict[str, int] = {
