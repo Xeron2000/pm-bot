@@ -8,6 +8,9 @@ cd "$(dirname "$0")"
 
 export PATH="$HOME/.local/bin:$PATH"
 
+# Reduce glibc heap fragmentation on long-running daemon
+export MALLOC_TRIM_THRESHOLD_=0
+
 # 默认纸面交易
 MODE="dry-run"
 if [ "$1" = "--live" ]; then

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import httpx
-import numpy as np
 import structlog
 from cachetools import TTLCache
 
@@ -94,6 +93,8 @@ def bucket_probability_numpy(
     temp_high_c: float,
     temp_unit: str = "C",
 ) -> float:
+    import numpy as np
+
     if forecast.members:
         arr = np.array(forecast.members)
         if temp_unit == "F":

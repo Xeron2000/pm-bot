@@ -24,7 +24,6 @@ from dataclasses import dataclass, field
 from math import erf, sqrt
 from pathlib import Path
 
-import numpy as np
 import structlog
 
 log = structlog.get_logger()
@@ -92,9 +91,9 @@ class EMOSCalibrator:
                 raw_std=5.0,
             )
 
-        arr = np.array(ensemble_members)
-        raw_mean = float(np.mean(arr))
-        raw_var = float(np.var(arr)) if len(arr) > 1 else 4.0
+        arr = __import__('numpy').array(ensemble_members)
+        raw_mean = float(__import__('numpy').mean(arr))
+        raw_var = float(__import__('numpy').var(arr)) if len(arr) > 1 else 4.0
 
         a = self.coeffs["a"]
         b = self.coeffs["b"]
@@ -181,6 +180,7 @@ class EMOSCalibrator:
             log.warning("emos_insufficient_data", n=len(data.observations))
             return self.coeffs
 
+        import numpy as np
         means = np.array(data.ensemble_means)
         vars_ = np.array(data.ensemble_vars)
         obs = np.array(data.observations)
@@ -235,11 +235,12 @@ class EMOSCalibrator:
 
     def _train_grid_search(
         self,
-        means: np.ndarray,
-        vars_: np.ndarray,
-        obs: np.ndarray,
+        means: 'np.ndarray',
+        vars_: 'np.ndarray',
+        obs: 'np.ndarray',
     ) -> None:
         """Simple grid search for EMOS coefficients."""
+        import numpy as np
         best_crps = float("inf")
         best_coeffs = self.coeffs.copy()
 
