@@ -449,3 +449,36 @@ Backtested all 8 strategies on real Polymarket data. Found actual_temps key mism
 ### Next Steps
 
 - None - task complete
+
+
+## Session 30: Update trading-config spec
+
+**Date**: 2026-05-16
+**Task**: Update trading-config spec
+**Branch**: `main`
+
+### Summary
+
+Updated trading-config spec with session learnings: actual_temps key mismatch bug, CLOB history empty for resolved markets, bucket_probability_numpy Celsius path bug, strategy deletion records, real backtest results, common mistakes section.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d00b88f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
