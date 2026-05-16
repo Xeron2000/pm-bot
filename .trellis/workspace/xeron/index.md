@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 28
-- **Last Active**: 2026-05-14
+- **Total Sessions**: 29
+- **Last Active**: 2026-05-16
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~418 | Active |
+| `journal-2.md` | ~451 | Active |
 | `journal-1.md` | ~588 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 29 | 2026-05-16 | Strategy cleanup + actual_temps bug fix | `9729b72` | `main` |
 | 28 | 2026-05-14 | Backtest diagnosis: 0% win rate root cause | `d0b651a` | `main` |
 | 27 | 2026-05-14 | Lazy-load numpy, save ~36MB | `08c59f2` | `main` |
 | 26 | 2026-05-14 | Fix daemon memory leak (httpx + gc) | `eb2386c` | `main` |

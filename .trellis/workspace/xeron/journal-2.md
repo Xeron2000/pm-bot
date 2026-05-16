@@ -416,3 +416,36 @@ Diagnosed backtest 0% win rate: (1) fixed triple unit-conversion bug in engine.p
 ### Next Steps
 
 - None - task complete
+
+
+## Session 29: Strategy cleanup + actual_temps bug fix
+
+**Date**: 2026-05-16
+**Task**: Strategy cleanup + actual_temps bug fix
+**Branch**: `main`
+
+### Summary
+
+Backtested all 8 strategies on real Polymarket data. Found actual_temps key mismatch bug (tuple vs string) causing 0% win rate. Deleted 4 losing strategies (gopfan2, emos_gopfan2, smart_wallet, adaptive_smart_wallet). Updated 13 files (config, CLI, docs). Remaining: forecast_arb, emos_forecast_arb, barbell, adaptive_barbell.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9729b72` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
