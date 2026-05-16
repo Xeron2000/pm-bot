@@ -14,38 +14,9 @@ max_daily = 200.0
 max_per_city = 100.0
 max_total_pct = 0.30
 
-[strategy.forecast_arb]
-# Model vs market mispricing exploit
-min_mispricing = 0.15
-min_model_prob = 0.05
-max_market_price = 0.30
-kelly_fraction = 0.25
-max_single_pct = 0.02
-max_position_usd = 2.0
-
-[strategy.emos_forecast_arb]
-# EMOS-enhanced forecast arb (calibrated probabilities)
-min_mispricing = 0.15
-min_model_prob = 0.05
-max_market_price = 0.30
-kelly_fraction = 0.25
-max_single_pct = 0.02
-max_position_usd = 2.0
-
-[strategy.barbell]
-# ColdMath-style barbell: tail buys + high-conviction central bets
-edge_threshold = 0.08
-kelly_fraction = 0.15
-max_single_pct = 0.02
-max_position_usd = 5.0
-tail_ratio = 0.80
-
-[strategy.adaptive_barbell]
-# Adaptive barbell with dynamic ratio adjustment
-edge_threshold = 0.08
-kelly_fraction = 0.15
-max_single_pct = 0.02
-max_position_usd = 5.0
+# Strategy defaults removed 2026-05-16 - all strategies unprofitable
+# Framework preserved for future implementation with better forecasting models
+# See: .trellis/spec/backend/trading-config.md for strategy design history
 
 [daemon]
 # Daemon configuration

@@ -228,8 +228,11 @@ def backtest(
     """Run backtest on strategies."""
     from pm_bot.backtest.engine import BacktestEngine
     from pm_bot.strategies.base import ALL_STRATEGIES
-    from pm_bot.strategies.emos_strategies import EMOSForecastArbStrategy
-    from pm_bot.scripts.train_emos import train_city
+
+    if not ALL_STRATEGIES:
+        console.print("[red]No strategies available. All strategies deleted 2026-05-16.[/red]")
+        console.print("See: .trellis/spec/backend/trading-config.md for strategy design history.")
+        raise typer.Exit(1)
 
     async def _backtest():
         city_list = cities.split(",") if cities else ["Chicago"]
@@ -361,8 +364,11 @@ def status():
     # Strategies
     from pm_bot.strategies.base import ALL_STRATEGIES
     console.print("[bold]Available Strategies:[/bold]")
-    for name, strat in ALL_STRATEGIES.items():
-        console.print(f"  • {name}: {strat.name}")
+    if ALL_STRATEGIES:
+        for name, strat in ALL_STRATEGIES.items():
+            console.print(f"  • {name}: {strat.name}")
+    else:
+        console.print("  None (all strategies deleted 2026-05-16)")
 
     # EMOS calibrators
     from pathlib import Path

@@ -16,12 +16,11 @@ Complete Polymarket weather trading system with EMOS calibration, multi-model en
 
 ### Strategies
 
-| Strategy | Description |
-|----------|-------------|
-| `forecast_arb` | Forecast arbitrage (model vs market mispricing) |
-| `emos_forecast_arb` | EMOS-enhanced forecast arbitrage (calibrated probabilities) |
-| `barbell` | ColdMath-style barbell: tail buys + high-conviction central bets |
-| `adaptive_barbell` | Adaptive barbell with dynamic ratio adjustment |
+All strategies deleted 2026-05-16. Backtests showed marginal profitability or losses.
+
+Framework preserved for future implementation with better forecasting models.
+
+See: `.trellis/spec/backend/trading-config.md` for strategy design history.
 
 ### Scripts
 

@@ -51,25 +51,18 @@ _all_strategies: dict[str, Strategy] | None = None
 def get_all_strategies() -> dict[str, Strategy]:
     """All active strategies for Polymarket temperature markets.
 
-    Core strategies:
-    - forecast_arb: model vs market mispricing exploit
-    - emos_forecast_arb: EMOS-enhanced forecast arb (calibrated probabilities)
-    - barbell: tail buys + high-conviction central bets (ColdMath style)
-    - adaptive_barbell: barbell with dynamic ratio adjustment
+    Currently no active strategies. All strategies deleted 2026-05-16:
+    - gopfan2, emos_gopfan2: pure tail buying, unprofitable
+    - smart_wallet, adaptive_smart_wallet: no infrastructure
+    - forecast_arb, emos_forecast_arb: model vs market, unprofitable
+    - barbell, adaptive_barbell: tail+central, marginal
+
+    Framework preserved for future implementation with better forecasting models.
+    See: .trellis/spec/backend/trading-config.md for strategy design history.
     """
     global _all_strategies
     if _all_strategies is None:
-        from pm_bot.strategies.forecast_arb import ForecastArbStrategy
-        from pm_bot.strategies.emos_strategies import EMOSForecastArbStrategy
-        from pm_bot.strategies.barbell import BarbellStrategy, AdaptiveBarbellStrategy
-        from pm_bot.models.config import STRATEGY_DEFAULTS
-
-        _all_strategies = {
-            "forecast_arb": ForecastArbStrategy(**STRATEGY_DEFAULTS.get("forecast_arb", {})),
-            "emos_forecast_arb": EMOSForecastArbStrategy(**STRATEGY_DEFAULTS.get("emos_forecast_arb", {})),
-            "barbell": BarbellStrategy(**STRATEGY_DEFAULTS.get("barbell", {})),
-            "adaptive_barbell": AdaptiveBarbellStrategy(**STRATEGY_DEFAULTS.get("adaptive_barbell", {})),
-        }
+        _all_strategies = {}
     return _all_strategies
 
 

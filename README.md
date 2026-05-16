@@ -37,12 +37,11 @@ pm-bot-v2 status
 
 ## 策略列表
 
-| 策略 | 描述 | 适用场景 |
-|------|------|----------|
-| `forecast_arb` | 模型 vs 市场 mispricing | 核心策略 |
-| `emos_forecast_arb` | EMOS 增强的 forecast_arb | 最佳校准 |
-| `barbell` | 尾部 + 中央仓位组合 | ColdMath 风格 |
-| `adaptive_barbell` | 自适应 barbell | 动态调整 |
+所有策略已删除 (2026-05-16)。回测显示边际盈利或亏损。
+
+框架保留，等待更好的预报模型。
+
+详见: `.trellis/spec/backend/trading-config.md`
 
 ## 项目结构
 

@@ -95,37 +95,9 @@ DEFAULT_CITIES = [
     "Helsinki",
 ]
 
-STRATEGY_DEFAULTS: dict[str, dict[str, float]] = {
-    "forecast_arb": {
-        "min_mispricing": 0.15,
-        "min_model_prob": 0.05,
-        "max_market_price": 0.30,
-        "kelly_fraction": 0.50,
-        "max_single_pct": 0.15,
-        "max_position_usd": 15.0,
-    },
-    "emos_forecast_arb": {
-        "min_mispricing": 0.15,
-        "min_model_prob": 0.05,
-        "max_market_price": 0.30,
-        "kelly_fraction": 0.25,
-        "max_single_pct": 0.02,
-        "max_position_usd": 2.0,
-    },
-    "barbell": {
-        "edge_threshold": 0.08,
-        "kelly_fraction": 0.15,
-        "max_single_pct": 0.02,
-        "max_position_usd": 5.0,
-        "tail_ratio": 0.80,
-    },
-    "adaptive_barbell": {
-        "edge_threshold": 0.08,
-        "kelly_fraction": 0.15,
-        "max_single_pct": 0.02,
-        "max_position_usd": 5.0,
-    },
-}
+# Strategy defaults removed 2026-05-16 - all strategies unprofitable
+# Framework preserved for future implementation with better forecasting models
+# See: .trellis/spec/backend/trading-config.md for strategy design history
 
 CACHE_TTL: dict[str, int] = {
     "markets": 300,

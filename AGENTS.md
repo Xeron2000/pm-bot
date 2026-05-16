@@ -21,22 +21,11 @@ pm/
 
 ## 策略
 
-### forecast_arb（核心策略）
-- **逻辑**: 集合预报概率 vs Polymarket 价格，mispricing ≥ 15% 时建仓
-- **数据源**: Open-Meteo GEFS 31 成员集合
-- **仓位**: Kelly criterion × 0.50 (half Kelly)
-- **过滤**: max_market_price ≤ $0.30
+所有策略已删除 (2026-05-16)。回测显示边际盈利或亏损。
 
-### emos_forecast_arb（校准变体）
-- **逻辑**: 与 forecast_arb 相同，但使用 EMOS 校准概率替代原始集合计数
-- **优势**: 更准确的 edge 计算，更好的交易选择
+框架保留，等待更好的预报模型。
 
-### barbell（ColdMath 风格）
-- **逻辑**: 80% 尾部位置 + 20% 高确信度中央赌注
-- **过滤**: 尾部 price < $0.15，中央需要 20%+ edge
-
-### adaptive_barbell（动态变体）
-- **逻辑**: 与 barbell 相同，根据市场条件动态调整尾部/中央比例
+详见: `.trellis/spec/backend/trading-config.md`
 
 ## 共享模块
 
