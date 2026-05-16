@@ -482,3 +482,36 @@ Updated trading-config spec with session learnings: actual_temps key mismatch bu
 ### Next Steps
 
 - None - task complete
+
+
+## Session 31: Delete all strategies, keep framework
+
+**Date**: 2026-05-16
+**Task**: Delete all strategies, keep framework
+**Branch**: `main`
+
+### Summary
+
+Deleted all 4 remaining strategies (forecast_arb, emos_forecast_arb, barbell, adaptive_barbell). All showed marginal profitability or losses in backtests. Framework preserved: backtest engine, core modules, CLI infrastructure, EMOS calibration. Updated 13 files. Next: wait for better forecasting models.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `311a950` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
