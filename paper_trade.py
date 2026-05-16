@@ -50,7 +50,7 @@ log = structlog.get_logger()
 
 # ── Config ──
 INITIAL_BANKROLL = float(os.environ.get("PAPER_BANKROLL", "100.0"))
-GAMMA_API = "https://gamma-api.polymarket.com/markets"
+GAMMA_API = "https://gamma-api.polymarket.com"
 OPEN_METEO_FORECAST = "https://api.open-meteo.com/v1/forecast"
 OPEN_METEO_ENSEMBLE = "https://ensemble-api.open-meteo.com/v1/ensemble"
 
@@ -59,6 +59,20 @@ TRADE_CITIES = [
     "New York", "London", "Paris", "Tokyo", "Shanghai",
     "Seoul", "Hong Kong", "Miami", "Chicago", "Los Angeles",
 ]
+
+# Weather series slugs for Gamma API
+WEATHER_SERIES = {
+    "New York": "nyc-daily-weather",
+    "London": "london-daily-weather",
+    "Tokyo": "tokyo-daily-weather",
+    "Shanghai": "shanghai-daily-weather",
+    "Miami": "miami-daily-weather",
+    "Chicago": "chicago-daily-weather",
+    "Los Angeles": "los-angeles-daily-weather",
+    "Hong Kong": "hong-kong-daily-weather",
+    "Seoul": "seoul-daily-weather",
+    "Paris": "paris-daily-weather",
+}
 
 # Airport coordinates for forecast fetching
 AIRPORT_COORDS = {
@@ -137,17 +151,37 @@ async def fetch_forecast(city: str, client: httpx.AsyncClient) -> tuple[float, l
 
 async def fetch_markets(client: httpx.AsyncClient) -> list[dict]:
     """Fetch active weather markets from Gamma API."""
-    try:
-        resp = await client.get(
-            GAMMA_API,
-            params={"tag": "weather", "active": "true", "limit": 100},
-            timeout=15.0,
-        )
-        resp.raise_for_status()
-        return resp.json()
-    except Exception as e:
-        log.error("market_fetch_failed", error=str(e))
-        return []
+    all_markets = []
+    
+    for city, series_slug in WEATHER_SERIES.items():
+        try:
+            resp = await client.get(
+                f"{GAMMA_API}/events",
+                params={
+                    "series_slug": series_slug,
+                    "limit": 5,
+                    "order": "end_date",
+                    "ascending": False,
+                },
+                timeout=15.0,
+            )
+            resp.raise_for_status()
+            events = resp.json()
+            
+            # Extract markets from events
+            for event in events:
+                if event.get("closed", False):
+                    continue
+                for market in event.get("markets", []):
+                    market["_city"] = city
+                    all_markets.append(market)
+                    
+        except Exception as e:
+            log.error("market_fetch_failed", city=city, error=str(e))
+            continue
+    
+    log.info("markets_fetched", count=len(all_markets))
+    return all_markets
 
 
 def parse_bucket_from_question(question: str) -> tuple[float, float] | None:
@@ -172,6 +206,10 @@ def parse_bucket_from_question(question: str) -> tuple[float, float] | None:
 
 def match_city_from_market(market: dict) -> str | None:
     """Extract city from market title/question."""
+    # Check if city was already added during fetch
+    if "_city" in market:
+        return market["_city"]
+    
     title = market.get("question", "").lower()
 
     for city in TRADE_CITIES:
