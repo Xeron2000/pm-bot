@@ -10,23 +10,40 @@ scope: backend
 
 ## ⚠️ 核心教训
 
-### 教训1：危险 Kelly 参数 (2026-05-14)
+### 教训1：actual_temps 键类型不匹配 (2026-05-16)
+
+`fetch_actual_temps` 返回 string 键 `'city|date'`，但 `BacktestEngine` 用 tuple `(city, date)` 查找，导致所有交易解析为亏损（0% 胜率）。
+
+```python
+# ❌ 错误 (engine.py:369)
+actual = self._actual_temps.get((ev.city, ev.target_date))
+
+# ✅ 正确
+actual = self._actual_temps.get(f"{ev.city}|{ev.target_date}")
+```
+
+**根因**: `fetch_actual_temps` (real_data.py:1313) 用 f-string 生成键：
+```python
+data[key] = temp  # key = f'{city}|{date_iso}'
+```
+
+**症状**: 所有策略 0% 胜率，Sharpe 深度负值。诊断方法：打印 `_actual_temps` 键样例 vs 查找键。
+
+### 教训2：危险 Kelly 参数 (2026-05-14)
 
 STRATEGY_DEFAULTS 曾包含 kelly=0.80, max_single_pct=0.60，导致单笔可下 60% bankroll。
 
 ```python
 # ❌ 自杀参数（已修复）
 "forecast_arb": {"kelly_fraction": 0.80, "max_single_pct": 0.60}
-"resolution_delay": {"kelly_fraction": 0.80, "max_single_pct": 0.60}
 
 # ✅ 安全参数（当前）
 "forecast_arb": {"kelly_fraction": 0.25, "max_single_pct": 0.02}
-"gopfan2": {"kelly_fraction": 0.25, "max_single_pct": 0.02}
 ```
 
 **规则**: 未校准模型的 kelly_fraction 不得超过 0.30。max_single_pct 不得超过 0.05。
 
-### 教训2：P&L 公式方向错误
+### 教训3：P&L 公式方向错误
 
 NO 方向 P&L 公式曾写反，回测显示 +57,000% 回报。
 
@@ -37,32 +54,47 @@ raw_pnl = size * effective_price if not hit else -size * (1.0 - effective_price)
 raw_pnl = size * (1.0 - effective_price) if not hit else -size * effective_price
 ```
 
-### 教训3：用 mid price 成交
+### 教训4：用 mid price 成交
 
 Polymarket 订单簿实际是 bid=$0.010/ask=$0.990，mid=$0.500。只有尾部桶 (mid < $0.15) 的价格是准确的。中部桶回测结果完全不可信。
 
-### 教训4：中部桶交易全部负EV
+### 教训5：中部桶交易全部负EV
 
 买 YES 付 $0.990 ask，赢了赚 $0.010，输了亏 $0.990。风险回报比 99:1。
 
-### 教训5：edge 定义必须一致
+### 教训6：edge 定义必须一致
 
 所有策略 edge = `model_prob - market_price`。曾有策略用 `edge = 1.0 - yes_price`，导致 Kelly 重建 p_true = 1.0。
 
----
+### 教训7：CLOB 历史价格对已结算市场返回空数据
 
-## 当前策略 (2 个)
-
-### gopfan2 — 尾部YES彩票
+CLOB `/prices-history` 对已结算天气市场返回 0 数据点。回测必须在结算前获取价格，或使用 SQLite 缓存。
 
 ```python
-# strategies/base.py Gopfan2Strategy.run()
-if b.yes_price <= 0.15:
-    model_prob = bucket_probability_numpy(forecast, b.temp_low_c, b.temp_high_c)
-    edge = model_prob - b.yes_price
-    if edge >= 0.08:  # 8% minimum edge
-        # quarter Kelly sizing, max $2 per position
+# 已结算市场 → 0 数据点
+history = await get_price_history(condition_id)  # []
+
+# 解决: enrich_events_with_clob_prices 在结算前缓存
+# 或使用 Open-Meteo historical-forecast-api + archive-api 重建
 ```
+
+### 教训8：bucket_probability_numpy 温度单位处理
+
+Fahrenheit 路径正确使用范围比较，Celsius 路径对 range bucket 使用精确匹配（bug）。
+
+```python
+# ❌ Celsius 路径 (weather.py:118) — 精确匹配
+count = float(np.sum(truncated == temp_low_c))
+
+# ✅ Fahrenheit 路径 (weather.py:105-110) — 范围比较
+count = float(np.sum((truncated_f >= bucket_low_f) & (truncated_f <= bucket_high_f)))
+```
+
+**症状**: Celsius range bucket 概率始终为 0.000，导致策略无法正确识别 mispricing。
+
+---
+
+## 当前策略 (4 个)
 
 ### forecast_arb — 模型 vs 市场定价偏差
 
@@ -74,7 +106,40 @@ if mispricing >= 0.15 and b.yes_price <= 0.30:
     # quarter Kelly sizing, max $2 per position, max 3 recs per event
 ```
 
-### 已删除策略
+### emos_forecast_arb — EMOS 校准的 forecast_arb
+
+与 forecast_arb 相同，但使用 EMOS 校准概率替代原始集合计数。
+
+```python
+# strategies/emos_strategies.py EMOSForecastArbStrategy.run()
+model_prob = bucket_probability_emos(forecast, b.temp_low_c, b.temp_high_c, calibrator)
+mispricing = model_prob - b.yes_price
+if mispricing >= 0.15 and b.yes_price <= 0.30:
+    # quarter Kelly sizing, max $2 per position
+```
+
+### barbell — ColdMath 风格尾部+中央组合
+
+```python
+# strategies/barbell.py BarbellStrategy.run()
+# 尾部桶 (80%): price < $0.15, model_prob >= 0.18, edge >= 0.08
+# 中央桶 (20%): edge >= 0.20, 支持 YES 和 NO 方向
+```
+
+### adaptive_barbell — 动态调整的 barbell
+
+根据市场条件动态调整尾部/中央比例（0.60-0.90）。
+
+### 已删除策略 (2026-05-16 清理)
+
+| 策略 | 删除日期 | 原因 |
+|------|----------|------|
+| gopfan2 | 2026-05-16 | -2.9% 回报，5% 胜率，159 笔交易全亏 |
+| emos_gopfan2 | 2026-05-16 | -1.1% 回报，7.6% 胜率，纯尾部买入不赚钱 |
+| smart_wallet | 2026-05-16 | 0 笔交易，无基础设施 |
+| adaptive_smart_wallet | 2026-05-16 | 0 笔交易，无基础设施 |
+
+### 早期删除策略
 
 | 策略 | 删除日期 | 原因 |
 |------|----------|------|
@@ -89,7 +154,16 @@ if mispricing >= 0.15 and b.yes_price <= 0.30:
 | near_certain_bond | 2026-05-14 | edge 太薄，kelly=0.50 |
 | smart_wallet bot | 2026-05-14 | 无交易执行，从未实盘 |
 
-### 已删除模块 (2026-05-14 cleanup)
+### 已删除模块 (2026-05-16 cleanup)
+
+| 模块 | 行数 | 删除原因 |
+|------|------|----------|
+| strategies/smart_wallet.py | ~200 | 复制交易策略，无基础设施 |
+| core/smart_wallet.py | ~300 | 钱包追踪器，从未实盘 |
+| backtest/smart_wallet_backtest.py | ~150 | 专用回测，已删除 |
+| cli/wallet_cmd.py | ~100 | 钱包 CLI 命令 |
+
+### 早期删除模块 (2026-05-14 cleanup)
 
 | 模块 | 行数 | 删除原因 |
 |------|------|----------|
@@ -404,12 +478,63 @@ fill_prob_tail = 0.10
 
 ```python
 _all_strategies = {
-    "gopfan2": Gopfan2Strategy(**STRATEGY_DEFAULTS.get("gopfan2", {})),
     "forecast_arb": ForecastArbStrategy(**STRATEGY_DEFAULTS.get("forecast_arb", {})),
+    "emos_forecast_arb": EMOSForecastArbStrategy(**STRATEGY_DEFAULTS.get("emos_forecast_arb", {})),
+    "barbell": BarbellStrategy(**STRATEGY_DEFAULTS.get("barbell", {})),
+    "adaptive_barbell": AdaptiveBarbellStrategy(**STRATEGY_DEFAULTS.get("adaptive_barbell", {})),
 }
 ```
 
 **反模式**: 不要在 run() kwargs 注入 config，构造函数参数必须在构造时传入。
+
+---
+
+## 真实回测结果 (2026-05-16)
+
+90 天、15 城市、$2000 bankroll、seed 42、live 模式：
+
+| 策略 | 回报 | Sharpe | 胜率 | 交易数 |
+|------|------|--------|------|--------|
+| barbell | +0.3% | 0.40 | 4.1% | 148 |
+| adaptive_barbell | +0.3% | 0.63 | 2.7% | 148 |
+| forecast_arb | -0.6% | -1.02 | 1.2% | 81 |
+| emos_forecast_arb | -0.5% | -0.86 | 1.2% | 81 |
+
+**结论**: 策略边际盈利或亏损。真实优势可能需要更好的预报模型或市场微结构优势。
+
+### 外部参考
+
+| 项目 | 胜率 | 利润 | 来源 |
+|------|------|------|------|
+| AadiXD200/polymarket-weather-bot | 82.5% (52W/11L) | +$806 | GitHub |
+| PrintMoneyLab bot | 23% (38W/125L) | +$7 | Blog |
+| gopfan2 (wallet) | — | $343K+ | Leaderboard |
+| ColdMath (wallet) | — | $120K+ | Leaderboard |
+| Hans323 (single trade) | — | $1.11M | Leaderboard |
+
+---
+
+## Common Mistakes
+
+### 1. Dict 键类型不匹配
+
+**症状**: 查找始终返回 None，数据明明存在却找不到。
+
+**原因**: Python dict 键类型敏感，`('city', 'date')` ≠ `'city|date'`。
+
+**修复**: 检查数据生产者和消费者的键格式是否一致。
+
+**预防**: 使用 TypedDict 或 dataclass 定义键类型，避免隐式格式约定。
+
+### 2. 跨模块数据格式不一致
+
+**症状**: 模块 A 输出的数据格式与模块 B 期望的格式不匹配。
+
+**原因**: 没有共享的数据契约，各模块独立定义格式。
+
+**修复**: 在 models/ 中定义共享数据结构，所有模块使用同一类型。
+
+**预防**: 使用类型注解 + mypy 检查，避免 dict[str, Any] 传递。
 
 ---
 
