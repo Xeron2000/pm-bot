@@ -196,8 +196,7 @@ async def run_paper_trade():
     strategy = CombinedStrategy(bankroll=INITIAL_BANKROLL)
 
     # Get current bankroll from DB
-    state = db.get_state()
-    current_bankroll = float(state.get("bankroll", INITIAL_BANKROLL))
+    current_bankroll = float(db.get_state("bankroll", str(INITIAL_BANKROLL)))
     strategy.bankroll = current_bankroll
 
     log.info("bankroll_loaded", bankroll=current_bankroll)
@@ -319,13 +318,12 @@ async def run_paper_trade():
 def show_status():
     """Show current paper trading status."""
     db = PaperTradeDB(initial_bankroll=INITIAL_BANKROLL)
-    state = db.get_state()
 
     print("\n" + "=" * 60)
     print("  Paper Trading Status")
     print("=" * 60)
-    print(f"  Bankroll: ${float(state.get('bankroll', INITIAL_BANKROLL)):.2f}")
-    print(f"  Last Run: {state.get('last_run', 'Never')}")
+    print(f"  Bankroll: ${float(db.get_state('bankroll', str(INITIAL_BANKROLL))):.2f}")
+    print(f"  Last Run: {db.get_state('last_run', 'Never')}")
     print(f"  Initial:  ${INITIAL_BANKROLL:.2f}")
 
     # Get recent trades
