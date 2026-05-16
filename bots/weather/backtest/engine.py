@@ -366,7 +366,7 @@ class BacktestEngine:
 
     def _real_bucket_hit(self, ev: ResolvedEvent, bucket: TemperatureBucket) -> bool:
         # Get resolved temp from the actual_temps cache
-        key = (ev.city, ev.target_date)
+        key = f"{ev.city}|{ev.target_date}"
         obs_c = self._actual_temps.get(key) if hasattr(self, '_actual_temps') else None
         if obs_c is None:
             # If no actual temp, check if any market is winning

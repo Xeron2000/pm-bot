@@ -228,7 +228,7 @@ def backtest(
     """Run backtest on strategies."""
     from pm_bot.backtest.engine import BacktestEngine
     from pm_bot.strategies.base import ALL_STRATEGIES
-    from pm_bot.strategies.emos_strategies import EMOSGopfan2Strategy, EMOSForecastArbStrategy
+    from pm_bot.strategies.emos_strategies import EMOSForecastArbStrategy
     from pm_bot.scripts.train_emos import train_city
 
     async def _backtest():
@@ -344,65 +344,7 @@ def wallet_monitor(
     ))
 
 
-@app.command()
-def wallet_backtest(
-    days: int = typer.Option(90, "--days", help="Days to backtest"),
-    bankroll: float = typer.Option(100.0, "--bankroll", help="Initial bankroll"),
-):
-    """Backtest smart wallet copy-trading strategy."""
-    from pm_bot.backtest.smart_wallet_backtest import run_smart_wallet_backtest
-    from pm_bot.core.smart_wallet import SMART_WALLETS
 
-    async def _backtest():
-        console.print("[bold]Smart Wallet Backtest[/bold]")
-        console.print(f"  Days: {days}")
-        console.print(f"  Bankroll: ${bankroll:.2f}")
-        console.print()
-
-        result = await run_smart_wallet_backtest(days=days, bankroll=bankroll)
-
-        # Display results
-        table = Table(title="Smart Wallet Backtest Results")
-        table.add_column("Metric")
-        table.add_column("Value")
-
-        table.add_row("Total Trades", str(result.total_trades))
-        table.add_row("Winning Trades", str(result.winning_trades))
-        table.add_row("Losing Trades", str(result.losing_trades))
-        table.add_row("Win Rate", f"{result.win_rate:.1%}")
-        table.add_row("Total P&L", f"${result.total_pnl:.2f}")
-        table.add_row("Avg Win", f"${result.avg_win:.2f}")
-        table.add_row("Avg Loss", f"${result.avg_loss:.2f}")
-        table.add_row("Max Drawdown", f"{result.max_drawdown:.1%}")
-        table.add_row("Sharpe Ratio", f"{result.sharpe_ratio:.2f}")
-
-        console.print(table)
-
-        # Show recent trades
-        if result.trades:
-            console.print("\n[bold]Recent Trades (last 10):[/bold]")
-            trade_table = Table()
-            trade_table.add_column("Wallet")
-            trade_table.add_column("City")
-            trade_table.add_column("Side")
-            trade_table.add_column("Price")
-            trade_table.add_column("P&L")
-            trade_table.add_column("Won")
-
-            for t in result.trades[-10:]:
-                wallet_name = SMART_WALLETS.get(t.wallet, {}).get("name", "Unknown")
-                trade_table.add_row(
-                    wallet_name,
-                    t.city,
-                    t.side,
-                    f"${t.price:.3f}",
-                    f"${t.pnl:.2f}",
-                    "✓" if t.won else "✗",
-                )
-
-            console.print(trade_table)
-
-    asyncio.run(_backtest())
 
 
 @app.command()

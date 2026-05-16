@@ -18,8 +18,10 @@ Complete Polymarket weather trading system with EMOS calibration, multi-model en
 
 | Strategy | Description |
 |----------|-------------|
-| `emos_gopfan2` | EMOS-enhanced gopfan2 (model-validated tail buying) |
-| `emos_forecast_arb` | EMOS-enhanced forecast arbitrage |
+| `forecast_arb` | Forecast arbitrage (model vs market mispricing) |
+| `emos_forecast_arb` | EMOS-enhanced forecast arbitrage (calibrated probabilities) |
+| `barbell` | ColdMath-style barbell: tail buys + high-conviction central bets |
+| `adaptive_barbell` | Adaptive barbell with dynamic ratio adjustment |
 
 ### Scripts
 
@@ -39,8 +41,8 @@ python -m pm_bot.scripts.scan_markets
 # Scan specific cities
 python -m pm_bot.scripts.scan_markets --cities "Chicago,Miami,Buenos Aires"
 
-# Tail-only mode (gopfan2 style)
-python -m pm_bot.scripts.scan_markets --mode tail --min-edge 0.08
+# Scan mode (arb)
+python -m pm_bot.scripts.scan_markets --mode arb --min-edge 0.15
 ```
 
 ### 2. Train EMOS Calibrators
@@ -66,19 +68,6 @@ python -m pm_bot.scripts.trade_bot scan --cities "Buenos Aires,Cape Town,Lagos"
 
 ## Strategy Details
 
-### EMOS-Enhanced gopfan2
-
-Combines gopfan2's proven price-threshold approach with EMOS calibration:
-
-1. **Price Filter**: Only buckets with price < $0.15 (gopfan2 rule)
-2. **Model Validation**: EMOS probability must be > 18%
-3. **Sizing**: Quarter Kelly, $2 max per position
-
-**Why better than pure gopfan2:**
-- Pure gopfan2 buys all cheap buckets equally (some are correctly cheap)
-- EMOS filter only buys cheap buckets where model says probability is higher
-- Result: higher win rate, better risk-adjusted returns
-
 ### EMOS-Enhanced Forecast Arbitrage
 
 Uses calibrated probabilities for more accurate edge calculation:
@@ -86,6 +75,7 @@ Uses calibrated probabilities for more accurate edge calculation:
 1. **Calibrated Probability**: EMOS-adjusted ensemble forecast
 2. **Edge Detection**: Model probability vs market price
 3. **Position Sizing**: Kelly criterion with quarter-Kelly safety
+4. **Filter**: max_market_price ≤ $0.30, min_mispricing ≥ 15%
 
 ## EMOS Calibration
 
@@ -162,7 +152,6 @@ python -m pm_bot.cli.scanner backtest-emos --city "New York" --days 30
 ## References
 
 - [polymarket-tmax-lab](https://github.com/YoungseokOh/polymarket-tmax-lab) — EMOS implementation
-- [gopfan2 strategy](https://polymarketweather.com/blog/gopfan2-polymarket) — $343K+ profit
 - [ColdMath strategy](https://polymarketweather.com/blog/coldmath-polymarket) — $120K+ profit
 - [Windfall](http://windfall.polsia.app/) — Edge detection tool
 - [Degen Doppler](https://degendoppler.com/) — 14-model ensemble

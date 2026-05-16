@@ -1,13 +1,11 @@
 """Market scanner for weather trading opportunities.
 
 Continuously monitors all Polymarket weather markets for:
-1. Tail buckets (price < $0.15) - gopfan2 opportunities
-2. Model-mispriced buckets - forecast arb opportunities
-3. Best cities to trade based on competition/liquidity
+1. Model-mispriced buckets - forecast arb opportunities
+2. Best cities to trade based on competition/liquidity
 
 Usage:
     python -m pm_bot.scripts.scan_markets
-    python -m pm_bot.scripts.scan_markets --mode tail --min-edge 0.08
     python -m pm_bot.scripts.scan_markets --mode arb --min-edge 0.15
 """
 
@@ -126,7 +124,7 @@ class MarketScanner:
         """Scan markets for opportunities.
 
         Args:
-            mode: "tail" (gopfan2-style), "arb" (forecast arb), or "all"
+            mode: "arb" (forecast arb) or "all"
             min_edge: Minimum edge threshold
             cities: Specific cities to scan
             max_cities: Maximum cities to scan
@@ -286,24 +284,6 @@ class MarketScanner:
         edge = model_prob - yes_price
 
         # Apply strategy filters
-        if mode == "tail" or mode == "all":
-            # gopfan2: buy cheap YES
-            if yes_price < 0.15 and edge >= min_edge and model_prob >= 0.18:
-                return TradingOpportunity(
-                    city=city,
-                    event_id=event_id,
-                    event_title=event_title,
-                    market_question=question,
-                    yes_price=yes_price,
-                    model_prob=model_prob,
-                    edge=edge,
-                    direction="YES",
-                    strategy="tail",
-                    bucket_low=parsed.temp_low_c,
-                    bucket_high=parsed.temp_high_c,
-                    bucket_unit=parsed.temp_unit,
-                )
-
         if mode == "arb" or mode == "all":
             # Forecast arb: buy when model >> market
             if edge >= min_edge and yes_price <= 0.30:

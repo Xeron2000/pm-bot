@@ -75,8 +75,8 @@ def backtest_emos(
 ):
     """Backtest EMOS-enhanced strategies against raw strategies."""
     from pm_bot.backtest.engine import BacktestEngine
-    from pm_bot.strategies.base import Gopfan2Strategy
-    from pm_bot.strategies.emos_strategies import EMOSGopfan2Strategy
+    from pm_bot.strategies.base import ALL_STRATEGIES
+    from pm_bot.strategies.emos_strategies import EMOSForecastArbStrategy
     from pm_bot.scripts.train_emos import train_city
 
     console.print(f"Training EMOS for {city}...")
@@ -84,9 +84,10 @@ def backtest_emos(
 
     console.print(f"Running backtest for {days} days...")
 
-    # Run with raw gopfan2
+    # Run with raw forecast_arb
+    raw_strat = ALL_STRATEGIES["forecast_arb"]
     engine_raw = BacktestEngine(
-        strategies=[Gopfan2Strategy()],
+        strategies=[raw_strat],
         bankroll=bankroll,
         days=days,
         cities=[city],
@@ -94,9 +95,9 @@ def backtest_emos(
     )
     results_raw = asyncio.run(engine_raw.run_real())
 
-    # Run with EMOS gopfan2
+    # Run with EMOS forecast_arb
     engine_emos = BacktestEngine(
-        strategies=[EMOSGopfan2Strategy(emos_calibrator=calibrator)],
+        strategies=[EMOSForecastArbStrategy(emos_calibrator=calibrator)],
         bankroll=bankroll,
         days=days,
         cities=[city],
@@ -107,8 +108,8 @@ def backtest_emos(
     # Display comparison
     table = Table(title=f"EMOS vs Raw Backtest ({city})")
     table.add_column("Metric")
-    table.add_column("Raw gopfan2")
-    table.add_column("EMOS gopfan2")
+    table.add_column("Raw forecast_arb")
+    table.add_column("EMOS forecast_arb")
 
     if results_raw and results_emos:
         raw = results_raw[0]

@@ -96,13 +96,6 @@ DEFAULT_CITIES = [
 ]
 
 STRATEGY_DEFAULTS: dict[str, dict[str, float]] = {
-    "gopfan2": {
-        "yes_max": 0.15,
-        "no_min": 0.45,
-        "kelly_fraction": 0.50,
-        "max_single_pct": 0.15,
-        "max_position_usd": 15.0,
-    },
     "forecast_arb": {
         "min_mispricing": 0.15,
         "min_model_prob": 0.05,
@@ -110,14 +103,6 @@ STRATEGY_DEFAULTS: dict[str, dict[str, float]] = {
         "kelly_fraction": 0.50,
         "max_single_pct": 0.15,
         "max_position_usd": 15.0,
-    },
-    "emos_gopfan2": {
-        "yes_max": 0.15,
-        "min_model_prob": 0.18,
-        "edge_threshold": 0.08,
-        "kelly_fraction": 0.25,
-        "max_single_pct": 0.02,
-        "max_position_usd": 2.0,
     },
     "emos_forecast_arb": {
         "min_mispricing": 0.15,
@@ -139,26 +124,6 @@ STRATEGY_DEFAULTS: dict[str, dict[str, float]] = {
         "kelly_fraction": 0.15,
         "max_single_pct": 0.02,
         "max_position_usd": 5.0,
-    },
-    "smart_wallet": {
-        "kelly_fraction": 0.15,
-        "max_position_usd": 5.0,
-        "min_notional": 1.0,
-        "max_single_pct": 0.03,
-        "min_confidence": 0.5,
-        "min_wallet_pnl": 50_000,
-        "max_trade_age_min": 30.0,
-        "min_trade_size": 5.0,
-    },
-    "adaptive_smart_wallet": {
-        "kelly_fraction": 0.15,
-        "max_position_usd": 10.0,
-        "min_notional": 1.0,
-        "max_single_pct": 0.05,
-        "min_confidence": 0.4,
-        "min_wallet_pnl": 20_000,
-        "max_trade_age_min": 45.0,
-        "min_trade_size": 2.0,
     },
 }
 

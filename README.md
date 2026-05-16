@@ -39,9 +39,7 @@ pm-bot-v2 status
 
 | 策略 | 描述 | 适用场景 |
 |------|------|----------|
-| `gopfan2` | 尾部 YES 彩票（价格 < $0.15） | 简单快速 |
-| `forecast_arb` | 模型 vs 市场 mispricing | 中等复杂度 |
-| `emos_gopfan2` | EMOS 增强的 gopfan2 | 更准确的概率 |
+| `forecast_arb` | 模型 vs 市场 mispricing | 核心策略 |
 | `emos_forecast_arb` | EMOS 增强的 forecast_arb | 最佳校准 |
 | `barbell` | 尾部 + 中央仓位组合 | ColdMath 风格 |
 | `adaptive_barbell` | 自适应 barbell | 动态调整 |
@@ -61,7 +59,7 @@ pm/
 │   │   ├── kelly.py       # Kelly criterion
 │   │   └── ws.py          # WebSocket 实时价格
 │   ├── strategies/
-│   │   ├── base.py        # 策略基类 + gopfan2
+│   │   ├── base.py        # 策略基类
 │   │   ├── forecast_arb.py # Forecast arbitrage
 │   │   ├── emos_strategies.py # EMOS 增强策略
 │   │   └── barbell.py     # Barbell 策略
@@ -158,19 +156,18 @@ pm-bot-v2 train --all --days 60
 
 ```bash
 # 合成数据回测
-pm-bot-v2 backtest --strategy gopfan2 --days 30
+pm-bot-v2 backtest --strategy forecast_arb --days 30
 
 # 真实数据回测
 pm-bot-v2 backtest --strategy barbell --days 30 --real --cities Chicago,Miami
 
 # EMOS 增强回测
-pm-bot-v2 backtest --strategy emos_gopfan2 --emos --days 30
+pm-bot-v2 backtest --strategy emos_forecast_arb --emos --days 30
 ```
 
 ## 参考资源
 
 - [polymarket-tmax-lab](https://github.com/YoungseokOh/polymarket-tmax-lab) — EMOS 实现
-- [gopfan2 策略](https://polymarketweather.com/blog/gopfan2-polymarket) — $343K+ 利润
 - [ColdMath 策略](https://polymarketweather.com/blog/coldmath-polymarket) — $120K+ 利润
 - [Windfall](http://windfall.polsia.app/) — Edge 检测工具
 - [Degen Doppler](https://degendoppler.com/) — 14 模型集成

@@ -22,7 +22,7 @@ def scan(
         "all",
         "--strategy",
         "-s",
-        help="Strategy: all, gopfan2",
+        help="Strategy: all, forecast_arb",
     ),
     cities: Optional[str] = typer.Option(None, "--cities", "-c", help="Comma-separated cities (e.g. NYC,HK,MIA)"),
     all_cities: bool = typer.Option(False, "--all", help="Scan all available cities"),

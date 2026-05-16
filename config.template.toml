@@ -14,28 +14,11 @@ max_daily = 200.0
 max_per_city = 100.0
 max_total_pct = 0.30
 
-[strategy.gopfan2]
-# Tail-YES lottery tickets (mid <= $0.15)
-yes_max = 0.15
-no_min = 0.45
-kelly_fraction = 0.25
-max_single_pct = 0.02
-max_position_usd = 2.0
-
 [strategy.forecast_arb]
 # Model vs market mispricing exploit
 min_mispricing = 0.15
 min_model_prob = 0.05
 max_market_price = 0.30
-kelly_fraction = 0.25
-max_single_pct = 0.02
-max_position_usd = 2.0
-
-[strategy.emos_gopfan2]
-# EMOS-enhanced gopfan2 (model-validated tails)
-yes_max = 0.15
-min_model_prob = 0.18
-edge_threshold = 0.08
 kelly_fraction = 0.25
 max_single_pct = 0.02
 max_position_usd = 2.0
@@ -107,15 +90,3 @@ poly_pk = ""  # Polygon private key
 [dune]
 # Dune Analytics API (optional, for historical prices)
 dune_api_key = ""
-
-[smart_wallet]
-# Smart wallet copy-trading configuration
-enabled = true
-scan_interval = 30  # seconds
-min_trade_size = 5.0  # USD
-max_trade_age_min = 60  # minutes
-signal_cooldown_min = 30  # minutes
-# Kelly fraction for smart wallet trades
-kelly_fraction = 0.15
-# Max position per signal
-max_position_usd = 5.0

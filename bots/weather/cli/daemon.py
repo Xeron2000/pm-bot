@@ -139,7 +139,7 @@ class TradingDaemon:
         # Load EMOS calibrators
         self.emos_calibrators: dict[str, 'EMOSCalibrator'] = {}
         self._load_emos_calibrators()
-        self.smart_wallet_tracker = None  # deleted module
+
 
     def _load_emos_calibrators(self) -> None:
         """Load trained EMOS calibrators from disk."""
@@ -162,26 +162,7 @@ class TradingDaemon:
         if self.emos_calibrators:
             log.info("emos_calibrators_loaded", n=len(self.emos_calibrators))
 
-    def _init_smart_wallet_tracker(self) -> None:
-        """Initialize smart wallet tracker for copy-trading."""
-        try:
-            from pm_bot.core.smart_wallet import WalletTracker
 
-            # Get config
-            sw_config = self.config.get("smart_wallet", {})
-            if not sw_config.get("enabled", True):
-                log.info("smart_wallet_disabled")
-                self.smart_wallet_tracker = None
-                return
-
-            self.smart_wallet_tracker = WalletTracker(
-                max_trade_age_min=int(sw_config.get("max_trade_age_min", 60)),
-                signal_cooldown_min=int(sw_config.get("signal_cooldown_min", 30)),
-            )
-            log.info("smart_wallet_tracker_initialized", wallets=len(self.smart_wallet_tracker.tracked_wallets))
-        except Exception as e:
-            log.warning("smart_wallet_tracker_init_failed", error=str(e))
-            self.smart_wallet_tracker = None
 
     async def run(self) -> None:
         loop = asyncio.get_running_loop()
@@ -388,102 +369,7 @@ class TradingDaemon:
                     drawdown=drawdown,
                 )
 
-    async def _monitor_smart_wallets(self, client: httpx.AsyncClient) -> None:
-        """Monitor smart wallets for copy-trading signals."""
-        if not hasattr(self, 'smart_wallet_tracker') or not self.smart_wallet_tracker:
-            return
 
-        try:
-            from pm_bot.core.smart_wallet import WalletTracker, SMART_WALLETS
-            from pm_bot.strategies.smart_wallet import SmartWalletStrategy
-
-            tracker = self.smart_wallet_tracker
-            signals = await tracker.scan_for_signals(
-                client,
-                min_trade_size=5.0,
-            )
-
-            if not signals:
-                log.debug("no_smart_wallet_signals")
-                return
-
-            log.info("smart_wallet_signals_found", count=len(signals))
-
-            # Process signals through smart wallet strategy
-            strategy = SmartWalletStrategy()
-            for signal in signals:
-                if self.trades_this_cycle >= 10:
-                    break
-
-                # Create a synthetic event for the signal
-                from pm_bot.models.market import WeatherEvent, TemperatureBucket
-
-                # Parse bucket from signal
-                bucket = TemperatureBucket(
-                    temp_low=0,
-                    temp_high=0,
-                    market_id=signal.market_id,
-                    question=signal.bucket_question or f"Weather market {signal.market_id[:8]}",
-                    yes_price=signal.price,
-                    no_price=1 - signal.price,
-                )
-
-                event = WeatherEvent(
-                    event_id=signal.market_id,
-                    city=signal.city,
-                    date=datetime.now(timezone.utc).strftime("%Y-%m-%d"),
-                    title=signal.bucket_question or "Smart Wallet Trade",
-                    buckets=[bucket],
-                    slug=f"smart-wallet-{signal.market_id[:8]}",
-                )
-
-                # Run strategy
-                recs = strategy.run(
-                    event,
-                    wallet_signals=[signal],
-                    bankroll=self.bankroll,
-                )
-
-                for rec in recs:
-                    if rec.edge < 0.05:
-                        continue
-
-                    risk_result = self.risk_manager.full_check(
-                        city=rec.city,
-                        amount_usd=self.max_single,
-                        yes_price=rec.bucket.yes_price,
-                        no_price=rec.bucket.no_price,
-                        hours_to_resolution=24,
-                    )
-
-                    if not risk_result.allowed:
-                        log.info("risk_blocked_smart_wallet", reason=risk_result.reason)
-                        continue
-
-                    effective_kelly = self.kelly_fraction_val * risk_result.kelly_adjustment
-                    if self.dry_run and self.paper is not None:
-                        sizing_bankroll = self.paper.bankroll
-                    else:
-                        sizing_bankroll = self.bankroll
-
-                    sized = compute_kelly_for_recommendation(
-                        rec,
-                        bankroll=sizing_bankroll,
-                        kelly_multiplier=effective_kelly,
-                        max_single=self.max_single,
-                        max_daily=self.max_daily,
-                        daily_spent=self.paper.daily_spent if self.paper else 0,
-                        max_per_city=self.max_per_city,
-                        city_spent=self.paper.get_city_spent(rec.city) if self.paper else 0,
-                        max_total_pct=self.max_total_pct,
-                        total_exposure=self.paper.get_total_exposure() if self.paper else 0,
-                    )
-
-                    if sized is not None:
-                        await self._execute_trade(sized)
-
-        except Exception as e:
-            log.error("smart_wallet_monitor_failed", error=str(e))
 
     async def _auto_settle(self) -> None:
         if self.dry_run:
