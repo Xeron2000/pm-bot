@@ -30,6 +30,10 @@ data/emos_coeffs/                 # 14 城市 EMOS 系数
 paper_trade.py                    # 纸面交易
 ```
 
+## 历史
+
+- **2026-08-09**: 吸收 weatherbot(前身,已归档)的被动挂单限价逻辑 → `bots/weather/core/passive_price.py`,详见 [docs/migration-weatherbot.md](docs/migration-weatherbot.md)。
+
 ## Disclaimer
 
 For educational purposes only. Trading involves significant financial risk.
